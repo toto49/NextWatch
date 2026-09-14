@@ -27,9 +27,6 @@ des films, le projet doit :
 
 ## Personnes ayant accès au dépôt
 
-Liste récupérée depuis l'API GitHub avec une authentification disposant des droits
-de lecture du dépôt. La colonne « Mission » sera complétée ultérieurement :
-
 | Identité | Type | Mission |
 | --- | --- | --- |
 | [toto49](https://github.com/toto49) | Propriétaire | |
