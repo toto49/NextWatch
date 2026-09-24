@@ -67,17 +67,13 @@ des films, le projet doit :
 
 ## Personnes ayant accès au dépôt
 
-| Identité | Type | Mission |
-| --- | --- | --- |
-| [toto49](https://github.com/toto49) | Propriétaire | |
-| [GRem0](https://github.com/GRem0) | Collaborateur | |
-| [Oxilian37](https://github.com/Oxilian37) | Invitation en attente | |
-| [Myriamirl](https://github.com/Myriamirl) | Invitation en attente | |
+| Identité |
+| --- |
+| [toto49](https://github.com/toto49) |
+| [GRem0](https://github.com/GRem0) |
+| [Oxilian37](https://github.com/Oxilian37) |
+| [quervainmissamou](https://github.com/quervainmissamou) |
 
 > Cette liste regroupe les collaborateurs actifs et les invitations en attente
 > retournés par GitHub au moment de la vérification. Les auteurs de commits ne
 > sont pas nécessairement des personnes ayant actuellement accès au dépôt.
-
-Les invitations de [Oxilian37](https://github.com/Oxilian37) et
-[Myriamirl](https://github.com/Myriamirl) sont encore en attente d'acceptation.
-Ils sont inclus dans la liste afin d'anticiper leur accès prochain au dépôt.
