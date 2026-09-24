@@ -1,5 +1,45 @@
 # NextWatch
 
+## Environnement Jupyter
+
+Prérequis : **Python 3.10+** installé sur la machine (Windows, macOS ou Linux).
+
+### Installation
+
+**Linux / macOS :**
+
+```bash
+./scripts/setup.sh
+```
+
+**Windows (PowerShell) :**
+
+```powershell
+.\scripts\setup.ps1
+```
+
+Le script crée un environnement virtuel `.venv`, installe les dépendances de
+[`requirements.txt`](requirements.txt) et enregistre le kernel Jupyter
+**NextWatch**.
+
+### Lancement
+
+**Linux / macOS :**
+
+```bash
+source .venv/bin/activate
+jupyter notebook
+```
+
+**Windows (PowerShell) :**
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+jupyter notebook
+```
+
+Dans Jupyter, choisissez le kernel **NextWatch**.
+
 ## Dataset
 
 Le projet utilise le dataset [MovieLens 100k](https://grouplens.org/datasets/movielens/100k/)
