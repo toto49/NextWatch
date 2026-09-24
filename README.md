@@ -67,12 +67,12 @@ des films, le projet doit :
 
 ## Personnes ayant accès au dépôt
 
-| Identité |
-| --- |
-| [toto49](https://github.com/toto49) |
-| [GRem0](https://github.com/GRem0) |
-| [Oxilian37](https://github.com/Oxilian37) |
-| [quervainmissamou](https://github.com/quervainmissamou) |
+| Identité | Nom | Prénom
+| --- | --- | --- 
+| [toto49](https://github.com/toto49) | Boudaud | Tom 
+| [GRem0](https://github.com/GRem0) | Goubin | Rémi
+| [Oxilian37](https://github.com/Oxilian37) |Jautrou | Lilian
+| [quervainmissamou](https://github.com/quervainmissamou) | MISSAMOU BANSIMBA | Quervain
 
 > Cette liste regroupe les collaborateurs actifs et les invitations en attente
 > retournés par GitHub au moment de la vérification. Les auteurs de commits ne
