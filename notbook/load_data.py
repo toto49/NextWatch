@@ -46,12 +46,14 @@ def get_data_dir() -> Path:
     )
 
 
-def load_prepared(*, verbose: bool = True):
-    """Charge et prépare notes, films, users, et la table fusionnée df.
+def load_prepared():
+    """Charge, prépare et fusionne les données dans une seule table df.
 
     Returns
     -------
-    notes, films, users, df, GENRES
+    pandas.DataFrame
+        Table complète contenant les notes, les utilisateurs et les films.
+
     """
     data_dir = get_data_dir()
 
@@ -75,19 +77,12 @@ def load_prepared(*, verbose: bool = True):
     )
     films["release_year"] = films["release_date"].dt.year
 
-    # Table fusionnée pour analyses croisées
+    # Table complète pour les analyses croisées, sans affichage automatique.
     df = notes.merge(users, on="user_id", how="left").merge(
         films, left_on="item_id", right_on="movie_id", how="left"
     )
 
-    if verbose:
-        print(f"data_dir: {data_dir}")
-        print("notes:", notes.shape)
-        print("users:", users.shape)
-        print("films:", films.shape)
-        print("df fusionné:", df.shape)
-
-    return notes, films, users, df, GENRES
+    return df
 
 
 if __name__ == "__main__":
