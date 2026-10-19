@@ -24,6 +24,7 @@
 | **Features candidates** | Âge ; sexe ; genres du film aimé ; genres du candidat ; overlap de genres ; éventuellement popularité du candidat (sans fuite) |
 | **Colonnes / signaux interdits** | `occupation` (hors scope) ; note du candidat à prédire ; agrégats calculés avec cette note ; genre `unknown` / films sans genre utile |
 
+
 ## Type de problème, baseline, métrique
 
 | | Choix |
@@ -33,6 +34,12 @@
 | **Métrique** | Pertinence du top 5 : part de films du top 5 réellement aimés (≥ 3) + pondération par âge/sexe |
 
 **Protocole d’évaluation. :** sur MovieLens, à partir d’un film aimé A et du profil (âge, sexe), vérifier si un film B aimé (caché) apparaît dans le top 5. En inférence produit : seul le film saisi est exclu du top 5 (pas d’historique user).
+
+## Contrôle de la pondération (âge / sexe)
+
+- Les **poids âge/sexe** sur les genres sont **appris par le modèle** sur MovieLens (pas fixés à la main genre par genre).
+- Pour éviter une pondération trop forte : **régularisation** des coefficients et/ou un facteur global `α` (amplitude du correctif profil) choisi par **validation**, en comparaison à la baseline sans âge/sexe.
+- Principe : le film aimé (genres) reste le signal principal ; l’âge et le sexe ne font qu’un **réglage fin**.
 
 ## Pourquoi ces données permettent / ne permettent pas ce test
 
