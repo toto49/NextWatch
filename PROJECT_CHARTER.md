@@ -32,7 +32,7 @@
 | **Baseline** | Top 5 films les plus populaires partageant ≥ 1 genre avec le film aimé, **sans** âge/sexe |
 | **Métrique** | Pertinence du top 5 : part de films du top 5 réellement aimés (≥ 3) dans le jeu de test |
 
-**Protocole d’éval. :** sur MovieLens, à partir d’un film aimé A et du profil (âge, sexe), vérifier si un film B aimé (caché) apparaît dans le top 5. En inférence produit : seul le film saisi est exclu du top 5 (pas d’historique user).
+**Protocole d’évaluation. :** sur MovieLens, à partir d’un film aimé A et du profil (âge, sexe), vérifier si un film B aimé (caché) apparaît dans le top 5. En inférence produit : seul le film saisi est exclu du top 5 (pas d’historique user).
 
 ## Pourquoi ces données permettent / ne permettent pas ce test
 
