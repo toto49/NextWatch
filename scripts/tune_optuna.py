@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fine-tune NextWatch avec Optuna - Version Windows Multi-cœurs Autonome (1 à 3 films d'entrée)."""
+"""Fine-tune NextWatch avec Optuna - Exploration complète de TRAIN_FRAC (0.20 à 0.85)."""
 
 from __future__ import annotations
 
@@ -74,11 +74,12 @@ def _eval_trial_config(cfg: dict) -> float:
   demo_sex_weight = cfg["DEMO_SEX_WEIGHT"]
   age_scale = float(cfg["AGE_SCALE"])
 
-  # 1. Split Train / Test
-  train = _DF.sample(frac=train_frac, random_state=random_state).reset_index(
-      drop=True
-  )
-  test = _DF.drop(train.index).reset_index(drop=True)
+  # 1. Split Train / Test (sans chevauchement)
+  train_idx = _DF.sample(
+      frac=train_frac, random_state=random_state
+  ).index
+  train = _DF.loc[train_idx].reset_index(drop=True)
+  test = _DF.drop(train_idx).reset_index(drop=True)
 
   # 2. Filtrage des films éligibles
   film_stats = (
@@ -264,7 +265,7 @@ def _eval_trial_config(cfg: dict) -> float:
 
 
 if __name__ == "__main__":
-  N_TRIALS = 1000
+  N_TRIALS = 500
 
   print("=== Chargement des données ===")
   data_dir = find_data_dir()
@@ -286,10 +287,11 @@ if __name__ == "__main__":
   df_dict = df.to_dict(orient="list")
 
   print(
-      f"=== Lancement Optuna ({N_TRIALS} essais) — Multi-films (1 à 3) ==="
+      f"=== Lancement Optuna ({N_TRIALS} essais) — TRAIN_FRAC de 0.20 à 0.85"
+      " ==="
   )
 
-  sampler = optuna.samplers.TPESampler(seed=42, n_startup_trials=30)
+  sampler = optuna.samplers.TPESampler(seed=42, n_startup_trials=40)
   study = optuna.create_study(direction="maximize", sampler=sampler)
 
   max_workers = os.cpu_count() or 4
@@ -308,17 +310,17 @@ if __name__ == "__main__":
       configs = []
       for t in trials:
         cfg = {
-            "TRAIN_FRAC": t.suggest_float("TRAIN_FRAC", 0.40, 0.85, step=0.05),
-            "MIN_SUPPORT": t.suggest_int("MIN_SUPPORT", 5, 40),
-            "CF_N_NEIGHBORS": t.suggest_int("CF_N_NEIGHBORS", 30, 350, step=10),
+            "TRAIN_FRAC": t.suggest_float("TRAIN_FRAC", 0.20, 0.85, step=0.05),
+            "MIN_SUPPORT": t.suggest_int("MIN_SUPPORT", 1, 40),
+            "CF_N_NEIGHBORS": t.suggest_int("CF_N_NEIGHBORS", 20, 350, step=10),
             "HYBRID_ALPHA": t.suggest_float(
-                "HYBRID_ALPHA", 0.10, 0.90, step=0.05
+                "HYBRID_ALPHA", 0.05, 0.95, step=0.05
             ),
-            "HYBRID_POOL": t.suggest_int("HYBRID_POOL", 50, 400, step=10),
+            "HYBRID_POOL": t.suggest_int("HYBRID_POOL", 40, 350, step=10),
             "DEMO_SEX_WEIGHT": t.suggest_float(
-                "DEMO_SEX_WEIGHT", 0.0, 1.0, step=0.10
+                "DEMO_SEX_WEIGHT", 0.0, 0.8, step=0.10
             ),
-            "AGE_SCALE": t.suggest_int("AGE_SCALE", 20, 100, step=5),
+            "AGE_SCALE": t.suggest_int("AGE_SCALE", 15, 100, step=5),
         }
         configs.append(cfg)
 
