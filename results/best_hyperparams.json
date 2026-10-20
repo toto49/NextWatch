@@ -12,7 +12,7 @@
         "TRAIN_FRAC": 0.4,
         "MIN_SUPPORT": 50,
         "CF_N_NEIGHBORS": 10,
-        "HYBRID_ALPHA": 1.0,
+        "HYBRID_ALPHA": 1,
         "HYBRID_POOL": 60,
         "DEMO_SEX_WEIGHT": 0.0,
         "AGE_SCALE": 40.0
@@ -25,7 +25,7 @@
         "TRAIN_FRAC": 0.4,
         "MIN_SUPPORT": 30,
         "CF_N_NEIGHBORS": 60,
-        "HYBRID_ALPHA": 0.4,
+        "HYBRID_ALPHA": 0,
         "HYBRID_POOL": 80,
         "DEMO_SEX_WEIGHT": 0.8,
         "AGE_SCALE": 20.0
@@ -38,7 +38,7 @@
         "TRAIN_FRAC": 0.4,
         "MIN_SUPPORT": 10,
         "CF_N_NEIGHBORS": 80,
-        "HYBRID_ALPHA": 0.7,
+        "HYBRID_ALPHA": 0,
         "HYBRID_POOL": 80,
         "DEMO_SEX_WEIGHT": 0.8,
         "AGE_SCALE": 50.0
@@ -51,7 +51,7 @@
         "TRAIN_FRAC": 0.4,
         "MIN_SUPPORT": 10,
         "CF_N_NEIGHBORS": 80,
-        "HYBRID_ALPHA": 0.7,
+        "HYBRID_ALPHA": 0,
         "HYBRID_POOL": 80,
         "DEMO_SEX_WEIGHT": 0.8,
         "AGE_SCALE": 50.0
@@ -64,7 +64,7 @@
         "TRAIN_FRAC": 0.4,
         "MIN_SUPPORT": 30,
         "CF_N_NEIGHBORS": 100,
-        "HYBRID_ALPHA": 0.3,
+        "HYBRID_ALPHA": 0,
         "HYBRID_POOL": 150,
         "DEMO_SEX_WEIGHT": 0.2,
         "AGE_SCALE": 80.0
@@ -75,7 +75,7 @@
     "TRAIN_FRAC": 0.4,
     "MIN_SUPPORT": 10,
     "CF_N_NEIGHBORS": 80,
-    "HYBRID_ALPHA": 0.7,
+    "HYBRID_ALPHA": 0,
     "HYBRID_POOL": 80,
     "DEMO_SEX_WEIGHT": 0.8,
     "AGE_SCALE": 50.0
