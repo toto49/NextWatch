@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fine-tune NextWatch avec Optuna - Exploration complète de TRAIN_FRAC (0.20 à 0.85)."""
+"""Fine-tune NextWatch — Optimisation individuelle de CHAQUE modèle."""
 
 from __future__ import annotations
 
@@ -16,7 +16,6 @@ from scipy.sparse import csr_matrix
 from sklearn.feature_extraction.text import TfidfTransformer
 from sklearn.neighbors import NearestNeighbors
 
-# Masquer les logs verbeux
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 GENRES = [
@@ -40,6 +39,12 @@ GENRES = [
     "Western",
 ]
 
+FIXED_TRAIN_FRAC = 0.25
+FIXED_MIN_SUPPORT = 19
+RANDOM_STATE = 42
+LIKED_THRESHOLD = 4
+MAX_SEEDS = 3
+
 _DF: pd.DataFrame | None = None
 
 
@@ -48,55 +53,28 @@ def find_data_dir() -> Path:
   for p in [Path("dataset"), Path("../dataset"), root / "dataset"]:
     if (p / "u.data.csv").exists():
       return p
-  raise FileNotFoundError("Repertoire dataset/ introuvable.")
+  raise FileNotFoundError("Répertoire dataset/ introuvable.")
 
 
 def _init_worker(df_dict: dict):
-  """Initialise les données brutes dans chaque Worker."""
   global _DF
   _DF = pd.DataFrame(df_dict)
 
 
-def _eval_trial_config(cfg: dict) -> float:
-  """Évalue une configuration Optuna sur la situation produit à 1-3 films."""
+def _eval_trial_config(args: tuple[dict, str]) -> float:
+  """Évalue une config selon le modèle ciblé ('film_cf', 'user_cf', ou 'hybrid')."""
+  cfg, target_model = args
   global _DF
   assert _DF is not None
 
-  random_state = 42
-  liked_threshold = 4
-  max_seeds = 3
-
-  train_frac = cfg["TRAIN_FRAC"]
-  min_support = cfg["MIN_SUPPORT"]
-  cf_n_user = int(cfg["CF_N_USER"])
-  cf_n_film = int(cfg["CF_N_FILM"])
-  hybrid_alpha = cfg["HYBRID_ALPHA"]
-  hybrid_pool = cfg["HYBRID_POOL"]
-  demo_sex_weight = cfg["DEMO_SEX_WEIGHT"]
-  age_scale = float(cfg["AGE_SCALE"])
-
-  # 1. Split Train / Test (sans chevauchement)
   train_idx = _DF.sample(
-      frac=train_frac, random_state=random_state
+      frac=FIXED_TRAIN_FRAC, random_state=RANDOM_STATE
   ).index
   train = _DF.loc[train_idx].reset_index(drop=True)
   test = _DF.drop(train_idx).reset_index(drop=True)
 
-  # 2. Filtrage des films éligibles
-  film_stats = (
-      train.groupby("item_id")["rating"]
-      .agg(n_ratings="count", mean_rating="mean")
-      .reset_index()
-  )
-  eligible = film_stats.loc[film_stats["n_ratings"] >= min_support].set_index(
-      "item_id"
-  )
-  if len(eligible) == 0:
-    return 0.0
-
-  # 3. Construction des cas d'évaluation multi-films (1 à 3 films en entrée)
-  liked_train = train.loc[train["rating"] >= liked_threshold]
-  liked_test = test.loc[test["rating"] >= liked_threshold]
+  liked_train = train.loc[train["rating"] >= LIKED_THRESHOLD]
+  liked_test = test.loc[test["rating"] >= LIKED_THRESHOLD]
   train_counts = train.groupby("item_id").size()
 
   cand_A = liked_train.copy()
@@ -104,7 +82,7 @@ def _eval_trial_config(cfg: dict) -> float:
 
   def _get_top_seeds(df_u):
     sorted_u = df_u.sort_values(["rating", "pop"], ascending=[False, False])
-    return list(sorted_u["item_id"].unique()[:max_seeds])
+    return list(sorted_u["item_id"].unique()[:MAX_SEEDS])
 
   seeds_per_user = cand_A.groupby("user_id", group_keys=False).apply(
       _get_top_seeds
@@ -129,7 +107,7 @@ def _eval_trial_config(cfg: dict) -> float:
   if len(eval_cases) == 0:
     return 0.0
 
-  # 4. Matrice Film-Film TF-IDF
+  # Preparation Film-CF
   users_u = sorted(train["user_id"].unique())
   items_u = sorted(train["item_id"].unique())
   u_ix = {u: i for i, u in enumerate(users_u)}
@@ -150,6 +128,7 @@ def _eval_trial_config(cfg: dict) -> float:
   tfidf = TfidfTransformer()
   mat_iu_tfidf = tfidf.fit_transform(mat_iu)
 
+  cf_n_film = int(cfg.get("CF_N_FILM", 80))
   n_ask_i = min(cf_n_film + 1, len(items_u))
   nn_item = NearestNeighbors(metric="cosine", algorithm="brute")
   nn_item.fit(mat_iu_tfidf)
@@ -165,9 +144,9 @@ def _eval_trial_config(cfg: dict) -> float:
         if int(item_ids_arr[j]) != mid
     ]
 
-  # 5. Profils Utilisateurs (User-CF)
+  # Preparation User-CF
   liked_by_user = (
-      train.loc[train["rating"] >= liked_threshold]
+      train.loc[train["rating"] >= LIKED_THRESHOLD]
       .groupby("user_id")[["item_id", "rating"]]
       .apply(lambda x: list(zip(x["item_id"], x["rating"])))
       .to_dict()
@@ -182,7 +161,7 @@ def _eval_trial_config(cfg: dict) -> float:
               grp["gender"].to_numpy(),
           )
       )
-      for mid, grp in train.loc[train["rating"] >= liked_threshold].groupby(
+      for mid, grp in train.loc[train["rating"] >= LIKED_THRESHOLD].groupby(
           "item_id"
       )
   }
@@ -190,27 +169,26 @@ def _eval_trial_config(cfg: dict) -> float:
   movies = _DF.drop_duplicates("item_id").set_index("item_id")
   movie_genres = movies["genres"].to_dict()
 
-  # 6. Moteur de Recommandation Hybride Multi-Films
-  def recommend_hybrid(query_ids, age, gender):
+  # Fonctions de Recommandation
+  def recommend_film_cf(query_ids):
     seeds = set(int(x) for x in query_ids)
-
-    # Film-CF
-    scores_film = {}
+    scores = {}
     for qid in seeds:
       for mid, sim in CF_ITEM.get(qid, []):
         if mid in seeds:
           continue
-        scores_film[mid] = scores_film.get(mid, 0.0) + sim
-    film_list = [
-        m for m, _ in sorted(scores_film.items(), key=lambda x: -x[1])[
-            :hybrid_pool
-        ]
+        scores[mid] = scores.get(mid, 0.0) + sim
+    return [
+        m for m, _ in sorted(scores.items(), key=lambda x: (-x[1], x[0]))[:5]
     ]
 
-    # User-CF
-    scores_user = {}
+  def recommend_user_cf(query_ids, age, gender):
+    seeds = set(int(x) for x in query_ids)
     age_val = 30.0 if age is None else float(age)
     gender_val = "M" if gender is None else gender
+    cf_n_user = int(cfg.get("CF_N_USER", 200))
+    demo_sex_weight = float(cfg.get("DEMO_SEX_WEIGHT", 0.1))
+    age_scale = float(cfg.get("AGE_SCALE", 60))
 
     neighbors = []
     for qid in seeds:
@@ -223,29 +201,68 @@ def _eval_trial_config(cfg: dict) -> float:
     neighbors.sort(key=lambda x: -x[1])
     neighbors = neighbors[:cf_n_user]
 
+    scores = {}
     for vid, sim in neighbors:
       for mid, rat in liked_by_user.get(vid, []):
         if mid in seeds:
           continue
-        scores_user[mid] = scores_user.get(mid, 0.0) + float(sim) * float(rat)
+        scores[mid] = scores.get(mid, 0.0) + float(sim) * float(rat)
 
-    user_list = [
-        m for m, _ in sorted(scores_user.items(), key=lambda x: -x[1])[
-            :hybrid_pool
-        ]
+    return [
+        m for m, _ in sorted(scores.items(), key=lambda x: (-x[1], x[0]))[:5]
     ]
 
-    # Fusion
+  def recommend_hybrid(query_ids, age, gender):
+    pool = int(cfg.get("HYBRID_POOL", 150))
+    alpha = float(cfg.get("HYBRID_ALPHA", 0.5))
+
+    seeds = set(int(x) for x in query_ids)
+    scores_f = {}
+    for qid in seeds:
+      for mid, sim in CF_ITEM.get(qid, []):
+        if mid in seeds:
+          continue
+        scores_f[mid] = scores_f.get(mid, 0.0) + sim
+    film_list = [
+        m for m, _ in sorted(scores_f.items(), key=lambda x: -x[1])[:pool]
+    ]
+
+    age_val = 30.0 if age is None else float(age)
+    gender_val = "M" if gender is None else gender
+    cf_n_user = int(cfg.get("CF_N_USER", 200))
+    demo_sex_weight = float(cfg.get("DEMO_SEX_WEIGHT", 0.1))
+    age_scale = float(cfg.get("AGE_SCALE", 60))
+
+    neighbors = []
+    for qid in seeds:
+      for uid, rat, a, g in fans_of.get(qid, []):
+        sex = 1.0 if gender_val == g else 0.0
+        age_term = 1.0 - min(abs(age_val - float(a)) / age_scale, 1.0)
+        demo = demo_sex_weight * sex + (1.0 - demo_sex_weight) * age_term
+        neighbors.append((int(uid), demo * float(rat) / 5.0))
+
+    neighbors.sort(key=lambda x: -x[1])
+    neighbors = neighbors[:cf_n_user]
+
+    scores_u = {}
+    for vid, sim in neighbors:
+      for mid, rat in liked_by_user.get(vid, []):
+        if mid in seeds:
+          continue
+        scores_u[mid] = scores_u.get(mid, 0.0) + float(sim) * float(rat)
+    user_list = [
+        m for m, _ in sorted(scores_u.items(), key=lambda x: -x[1])[:pool]
+    ]
+
     scores = {}
     for rank, mid in enumerate(film_list):
-      scores[mid] = scores.get(mid, 0.0) + hybrid_alpha / (1.0 + rank)
+      scores[mid] = scores.get(mid, 0.0) + alpha / (1.0 + rank)
     for rank, mid in enumerate(user_list):
-      scores[mid] = scores.get(mid, 0.0) + (1.0 - hybrid_alpha) / (1.0 + rank)
+      scores[mid] = scores.get(mid, 0.0) + (1.0 - alpha) / (1.0 + rank)
 
     union_g = set()
     for qid in seeds:
       union_g.update(movie_genres.get(qid, []))
-
     for mid in list(scores.keys()):
       if union_g & set(movie_genres.get(mid, [])):
         scores[mid] *= 1.15
@@ -254,23 +271,24 @@ def _eval_trial_config(cfg: dict) -> float:
         m for m, _ in sorted(scores.items(), key=lambda x: (-x[1], x[0]))[:5]
     ]
 
-  # 7. Évaluation Precision@5
+  # Évaluation selon la cible
   p5_scores = []
   for _, row in eval_cases.iterrows():
-    rec = recommend_hybrid(row["query_ids"], row["age"], row["gender"])
-    rel = row["rel"]
-    hit = sum(1 for m in rec if m in rel) / 5.0
+    if target_model == "film_cf":
+      rec = recommend_film_cf(row["query_ids"])
+    elif target_model == "user_cf":
+      rec = recommend_user_cf(row["query_ids"], row["age"], row["gender"])
+    else:
+      rec = recommend_hybrid(row["query_ids"], row["age"], row["gender"])
+
+    hit = sum(1 for m in rec if m in row["rel"]) / 5.0
     p5_scores.append(hit)
 
   return float(np.mean(p5_scores))
 
 
 if __name__ == "__main__":
-  N_TRIALS = 500
-
-  print("=== Chargement des données ===")
   data_dir = find_data_dir()
-
   notes = pd.read_csv(data_dir / "u.data.csv")
   films = pd.read_csv(data_dir / "u.item.csv")
   users = pd.read_csv(data_dir / "u.user.csv").drop(
@@ -284,19 +302,13 @@ if __name__ == "__main__":
   df["genres"] = df[GENRES].apply(
       lambda row: [g for g in GENRES if row[g] == 1], axis=1
   )
-
   df_dict = df.to_dict(orient="list")
 
-  print(
-      f"=== Lancement Optuna ({N_TRIALS} essais) — TRAIN_FRAC de 0.20 à 0.85"
-      " ==="
-  )
-
-  sampler = optuna.samplers.TPESampler(seed=42, n_startup_trials=40)
-  study = optuna.create_study(direction="maximize", sampler=sampler)
-
   max_workers = os.cpu_count() or 4
-  print(f"Parallélisation forcée sur {max_workers} cœurs CPU !")
+  best_params_all = {
+      "TRAIN_FRAC": FIXED_TRAIN_FRAC,
+      "MIN_SUPPORT": FIXED_MIN_SUPPORT,
+  }
 
   with ProcessPoolExecutor(
       max_workers=max_workers,
@@ -304,43 +316,76 @@ if __name__ == "__main__":
       initargs=(df_dict,),
   ) as executor:
 
-    for i in range(0, N_TRIALS, max_workers):
-      batch_size = min(max_workers, N_TRIALS - i)
-      trials = [study.ask() for _ in range(batch_size)]
+    # 1. OPTIMISATION FILM-CF
+    print("=== 1/3 Optimisation Film-Film CF ===")
+    study_film = optuna.create_study(
+        direction="maximize", sampler=optuna.samplers.TPESampler(seed=42)
+    )
+    trials_f = [study_film.ask() for _ in range(50)]
+    configs_f = [
+        ({"CF_N_FILM": t.suggest_int("CF_N_FILM", 20, 300, step=10)}, "film_cf")
+        for t in trials_f
+    ]
+    res_f = list(executor.map(_eval_trial_config, configs_f))
+    for t, s in zip(trials_f, res_f):
+      study_film.tell(t, s)
 
-      configs = []
-      for t in trials:
-        cfg = {
-            "TRAIN_FRAC": t.suggest_float("TRAIN_FRAC", 0.20, 0.85, step=0.05),
-            "MIN_SUPPORT": t.suggest_int("MIN_SUPPORT", 1, 40),
-            "CF_N_USER": t.suggest_int("CF_N_USER", 20, 350, step=10),
-            "CF_N_FILM": t.suggest_int("CF_N_FILM", 20, 200, step=10),
-            "HYBRID_ALPHA": t.suggest_float(
-                "HYBRID_ALPHA", 0.05, 0.95, step=0.05
-            ),
-            "HYBRID_POOL": t.suggest_int("HYBRID_POOL", 40, 350, step=10),
-            "DEMO_SEX_WEIGHT": t.suggest_float(
-                "DEMO_SEX_WEIGHT", 0.0, 0.8, step=0.10
-            ),
-            "AGE_SCALE": t.suggest_int("AGE_SCALE", 15, 100, step=5),
-        }
-        configs.append(cfg)
+    best_params_all["CF_N_FILM"] = study_film.best_params["CF_N_FILM"]
+    print(
+        f"  -> Meilleur P@5 Film-CF : {study_film.best_value:.4f} (CF_N_FILM ="
+        f" {best_params_all['CF_N_FILM']})"
+    )
 
-      results = list(executor.map(_eval_trial_config, configs))
+    # 2. OPTIMISATION USER-CF
+    print("\n=== 2/3 Optimisation User-User CF ===")
+    study_user = optuna.create_study(
+        direction="maximize", sampler=optuna.samplers.TPESampler(seed=42)
+    )
+    trials_u = [study_user.ask() for _ in range(80)]
+    configs_u = []
+    for t in trials_u:
+      cfg = {
+          "CF_N_USER": t.suggest_int("CF_N_USER", 50, 450, step=10),
+          "DEMO_SEX_WEIGHT": t.suggest_float(
+              "DEMO_SEX_WEIGHT", 0.0, 0.6, step=0.05
+          ),
+          "AGE_SCALE": t.suggest_int("AGE_SCALE", 15, 110, step=5),
+      }
+      configs_u.append((cfg, "user_cf"))
 
-      for trial, score in zip(trials, results):
-        study.tell(trial, score)
+    res_u = list(executor.map(_eval_trial_config, configs_u))
+    for t, s in zip(trials_u, res_u):
+      study_user.tell(t, s)
 
-      completed = min(i + max_workers, N_TRIALS)
-      print(
-          f"[{completed}/{N_TRIALS}] Meilleur P@5 actuel : {study.best_value:.4f}"
-      )
+    best_params_all.update(study_user.best_params)
+    print(f"  -> Meilleur P@5 User-CF : {study_user.best_value:.4f}")
 
-  print("\n=== MEILLEURS HYPERPARAMÈTRES TROUVÉS ===")
-  print(f"P@5 Max : {study.best_value:.4f}")
-  print(json.dumps(study.best_params, indent=2))
+    # 3. OPTIMISATION HYBRIDE
+    print("\n=== 3/3 Optimisation Modèle Hybride ===")
+    study_hyb = optuna.create_study(
+        direction="maximize", sampler=optuna.samplers.TPESampler(seed=42)
+    )
+    trials_h = [study_hyb.ask() for _ in range(100)]
+    configs_h = []
+    for t in trials_h:
+      cfg = {
+          **best_params_all,
+          "HYBRID_ALPHA": t.suggest_float("HYBRID_ALPHA", 0.01, 0.95, step=0.02),
+          "HYBRID_POOL": t.suggest_int("HYBRID_POOL", 50, 350, step=10),
+      }
+      configs_h.append((cfg, "hybrid"))
+
+    res_h = list(executor.map(_eval_trial_config, configs_h))
+    for t, s in zip(trials_h, res_h):
+      study_hyb.tell(t, s)
+
+    best_params_all.update(study_hyb.best_params)
+    print(f"  -> Meilleur P@5 Hybride : {study_hyb.best_value:.4f}")
+
+  print("\n=== MEILLEURS HYPERPARAMÈTRES GLOBAUX TROUVÉS ===")
+  print(json.dumps(best_params_all, indent=2))
 
   out_path = Path("results/best_hyperparams_optuna.json")
   out_path.parent.mkdir(parents=True, exist_ok=True)
-  out_path.write_text(json.dumps(study.best_params, indent=2), encoding="utf-8")
+  out_path.write_text(json.dumps(best_params_all, indent=2), encoding="utf-8")
   print(f"\nRésultats exportés dans : {out_path}")
