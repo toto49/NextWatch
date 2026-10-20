@@ -1,0 +1,83 @@
+{
+  "metric": "P@5_product",
+  "liked_threshold": 4,
+  "random_state": 42,
+  "n_configs": 200,
+  "mode": "random",
+  "best_by_method": {
+    "baseline_overlap_mean": {
+      "P@5": 0.21237993596584848,
+      "P@10": 0.18441835645677696,
+      "params": {
+        "TRAIN_FRAC": 0.4,
+        "MIN_SUPPORT": 50,
+        "CF_N_NEIGHBORS": 10,
+        "HYBRID_ALPHA": 1.0,
+        "HYBRID_POOL": 60,
+        "DEMO_SEX_WEIGHT": 0.0,
+        "AGE_SCALE": 40.0
+      }
+    },
+    "dummy_random": {
+      "P@5": 0.016648879402347917,
+      "P@10": 0.017182497331910355,
+      "params": {
+        "TRAIN_FRAC": 0.4,
+        "MIN_SUPPORT": 30,
+        "CF_N_NEIGHBORS": 60,
+        "HYBRID_ALPHA": 0.4,
+        "HYBRID_POOL": 80,
+        "DEMO_SEX_WEIGHT": 0.8,
+        "AGE_SCALE": 20.0
+      }
+    },
+    "model_film_film_cf": {
+      "P@5": 0.3474919957310566,
+      "P@10": 0.3098185699039488,
+      "params": {
+        "TRAIN_FRAC": 0.4,
+        "MIN_SUPPORT": 10,
+        "CF_N_NEIGHBORS": 80,
+        "HYBRID_ALPHA": 0.7,
+        "HYBRID_POOL": 80,
+        "DEMO_SEX_WEIGHT": 0.8,
+        "AGE_SCALE": 50.0
+      }
+    },
+    "model_hybrid_film_user": {
+      "P@5": 0.36243329775880473,
+      "P@10": 0.3134471718249734,
+      "params": {
+        "TRAIN_FRAC": 0.4,
+        "MIN_SUPPORT": 10,
+        "CF_N_NEIGHBORS": 80,
+        "HYBRID_ALPHA": 0.7,
+        "HYBRID_POOL": 80,
+        "DEMO_SEX_WEIGHT": 0.8,
+        "AGE_SCALE": 50.0
+      }
+    },
+    "model_user_user_cf": {
+      "P@5": 0.34066168623265747,
+      "P@10": 0.2913553895410886,
+      "params": {
+        "TRAIN_FRAC": 0.4,
+        "MIN_SUPPORT": 30,
+        "CF_N_NEIGHBORS": 100,
+        "HYBRID_ALPHA": 0.3,
+        "HYBRID_POOL": 150,
+        "DEMO_SEX_WEIGHT": 0.2,
+        "AGE_SCALE": 80.0
+      }
+    }
+  },
+  "recommended_for_notebook": {
+    "TRAIN_FRAC": 0.4,
+    "MIN_SUPPORT": 10,
+    "CF_N_NEIGHBORS": 80,
+    "HYBRID_ALPHA": 0.7,
+    "HYBRID_POOL": 80,
+    "DEMO_SEX_WEIGHT": 0.8,
+    "AGE_SCALE": 50.0
+  }
+}

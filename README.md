@@ -64,6 +64,23 @@ Le détail (question, features, baseline, Precision@5) est dans
 Le dataset documente aussi le **métier** (`occupation`) ; ce signal est **hors
 scope** du modèle (voir charter et EDA).
 
+## Fine-tune des hyperparamètres
+
+Recherche aléatoire (ou grille) sur les hypers du notebook, métrique
+**Precision@5 en mode produit** (âge + sexe + film aimé) :
+
+```bash
+source .venv/bin/activate
+python scripts/tune_hyperparams.py
+python scripts/tune_hyperparams.py --n-iter 200
+python scripts/tune_hyperparams.py --n-iter 500
+python scripts/tune_hyperparams.py --max-cases 150 --n-iter 30   # smoke test
+```
+
+Résultats écrits dans [`results/tune_hyperparams.csv`](results/tune_hyperparams.csv)
+et [`results/best_hyperparams.json`](results/best_hyperparams.json).
+Copier ensuite les meilleurs params dans `notbook/MODEL_BASELINE.ipynb` si besoin.
+
 ## Personnes ayant accès au dépôt
 
 | Identité | Nom | Prénom
