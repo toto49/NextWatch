@@ -56,14 +56,13 @@ Le dataset contient :
 
 ## Objectif du projet
 
-NextWatch a pour objectif de développer un système de recommandation de films.
-À partir de l'historique des notes et des caractéristiques des utilisateurs et
-des films, le projet doit :
+NextWatch recommande un **top 5** de films proches d’un film aimé (au moins un
+genre en commun), avec un score genres **pondéré par l’âge et le sexe**.
+Le détail (question, features, baseline, Precision@5) est dans
+[`PROJECT_CHARTER.md`](PROJECT_CHARTER.md).
 
-- analyser les préférences des utilisateurs ;
-- prédire les films susceptibles de plaire à un utilisateur ;
-- proposer des recommandations personnalisées ;
-- comparer et évaluer différentes méthodes de recommandation.
+Le dataset documente aussi le **métier** (`occupation`) ; ce signal est **hors
+scope** du modèle (voir charter et EDA).
 
 ## Personnes ayant accès au dépôt
 
