@@ -4,71 +4,74 @@
 
 **Question :** Si une personne a aimé un film en 1997, quels autres films aurait-elle pu aimer ?
 
-**Décision :** proposer un **top 5** de films via un score basé sur les **genres du film aimé** (surtout l’**affinité de goûts** entre genres) et **pondéré par l’âge et le sexe** (poids appris sur MovieLens). Pas de filtre « ≥ 1 genre en commun » côté **modèle** : l’affinité suffit à relier les genres, y compris sans tag partagé.
+**Décision :** proposer un **top 5** de films à partir d’un **film aimé** (ses genres) et du profil (**âge**, **sexe**). On compare une **baseline heuristique** à **trois modèles sklearn** (clustering enrichi de films, filtrage collaboratif item–item, régression logistique).
 
-À l’usage : l’utilisateur saisit **âge**, **sexe** et un **film aimé** (ses genres en découlent). Ce n’est pas un utilisateur du dataset en entrée.
+À l’usage : l’utilisateur saisit **âge**, **sexe** et un **film aimé**. Ce n’est pas un utilisateur du dataset en entrée.
 
 ## Unité, population, horizon
 
 | Élément | Définition |
 | --- | --- |
 | **Unité** | Triplet `(âge, sexe, film_aimé) → classement de films candidats` ; en apprentissage : couples dérivés des notes MovieLens |
-| **Population** | MovieLens 100k (19 sept. 1997 – 22 avr. 1998) : ~943 users, ~1 682 films, ~100k notes brutes ; **périmètre d’analyse / modèle** ≈ **99 990** notes après exclusion du genre `unknown` |
+| **Population** | MovieLens 100k (19 sept. 1997 – 22 avr. 1998) : ~943 users, ~1 682 films, ~100k notes brutes ; **périmètre** ≈ **99 990** notes après exclusion du genre `unknown` |
 | **Horizon** | Recommander d’autres films *a posteriori* sur ce catalogue historique (pas de temps réel) |
 
-## Target, features candidates, colonnes interdites
+## Cible \(y\) et variables \(X\)
+
+Chaque exemple est un couple *(profil + film aimé A, film candidat B)*.
+
+| | Définition |
+| --- | --- |
+| **\(y\)** (cible) | \(y = 1\) si la note user→B est **≥ 4**, sinon \(y = 0\). Ranking : maximiser les \(y=1\) dans le top-k (Precision@5 / @10). Poids plus fort si note **5**. |
+| **\(X\)** | **Profil :** `age`, `gender`. **A / B :** vecteurs de `genres` (0/1). **Dérivés selon le modèle :** même cluster KMeans ; similarité cosine genres ; overlap de genres ; note moyenne train de B (sans fuite). |
+| **Sortie** | Score \(\hat{s}(X)\) par candidat B → top 5 (produit) / top 10 (eval). Pas de prédiction de la note 1–5 brute. |
+
+### Features et colonnes interdites
 
 | | Choix |
 | --- | --- |
-| **Target** | Film **aimé** si note **≥ 3** ; poids d’exemple plus fort si la note est plus haute (4–5) |
-| **Features candidates** | Âge ; sexe ; genres du film aimé ; genres du candidat ; **affinité de goûts** entre genres (corr. des notes moyennes par user) |
-| **Colonnes / signaux interdits** | `occupation` (présent dans le CSV, hors scope pipeline et modèle) ; note du candidat à prédire ; agrégats calculés avec cette note ; genre `unknown` / films sans genre utile ; co-occurrence catalogue ; popularité comme facteur du **modèle** ; filtre hard overlap côté **modèle** (réservé à la baseline) |
+| **Dans \(X\)** | `age` ; `gender` ; genres de A et de B ; dérivés cluster / similarité / overlap / mean_rating train de B |
+| **Hors \(X\) / interdits** | `occupation` ; note de B à prédire ; agrégats calculés avec cette note ; genre `unknown` ; popularité (volume de notes) comme facteur modèle |
 
-
-## Type de problème, baseline, métrique
+## Type de problème, baseline, modèles, métrique
 
 | | Choix |
 | --- | --- |
 | **Type** | Ranking / recommandation basée contenu (genres) + profil (âge, sexe) |
-| **Baseline** | Top 5 / top 10 des films **populaires dans les genres du film aimé** (overlap naïf + volume de notes) — détail ci-dessous |
-| **Métrique** | **Precision@5** (principale, alignée au top 5 produit) et **Precision@10** (secondaire, pour vérifier le ranking au-delà du 5ᵉ) : part des films du top-k réellement aimés (note ≥ 3) sur le hold-out |
+| **Dummy** | Top-k films aléatoires (seed fixe) |
+| **Baseline** | Heuristique **sans ML** : overlap ≥ 1 genre avec A + **note moyenne train** (min. de notes). **Ce n’est pas le clustering.** |
+| **Modèles** | (1) **KMeans** films × genres ; (2) **Item–item CF** (`NearestNeighbors` cosine sur notes train) ; (3) **LogisticRegression** \(P(y=1 \mid X)\) — détail ci-dessous |
+| **Métrique** | **Precision@5** (principale) et **Precision@10** : part des films du top-k réellement aimés (note ≥ 4) sur le hold-out |
 
-**Protocole d’évaluation :** sur MovieLens, à partir d’un film aimé A et du profil (âge, sexe), vérifier si un film B aimé (caché) apparaît dans le top-k. On reporte **Precision@5** et **Precision@10** pour le **modèle** et pour la **baseline**. En inférence produit : seul le film saisi est exclu du top 5 (pas d’historique user).
+**Protocole d’évaluation :** film aimé A + profil → top-k ; on vérifie la présence de films B aimés cachés. On reporte P@5 / P@10 pour dummy, baseline et chaque modèle. En inférence produit : seul le film saisi est exclu.
 
-## Construction de la baseline
+## Construction de la baseline (heuristique)
 
-**Pourquoi pas la popularité globale ?** Classer les films les plus notés du catalogue entier ignore le film aimé : ce n’est plus « quels *autres* films après celui-ci », c’est « quels films tout le monde note ». Peu cohérent avec la question produit.
-
-**Baseline retenue :** même entrée (film aimé → ses genres), même sortie (top 5 / eval @5 et @10), mais **sans** affinité apprise, **sans** âge, **sans** sexe.
-
-| | Rôle dans le score baseline |
+| | Rôle |
 | --- | --- |
-| **1. Overlap de genres (naïf)** | On ne garde que les films qui partagent **≥ 1 genre** avec le film aimé. Lien contenu simple (tags), pas une corr. de goûts. |
-| **2. Popularité** | Parmi ces candidats, score = volume de notes sur le jeu d’apprentissage (**sans fuite**). Plus le film est souvent noté, plus il monte. |
-| **3. Exclusion** | Le film saisi est retiré (on ne se recommande pas lui-même). |
+| **1. Overlap de genres** | Candidats = films partageant **≥ 1 genre** avec A |
+| **2. Note moyenne** | Score = moyenne des notes **train** (seuil min. de notes) |
+| **3. Exclusion** | Retirer le film A |
 
-**Popularité** = souvent noté (nombre de notes), pas « bien noté » (moyenne).
+La baseline doit être battue (ou au moins égalée de façon utile) par les modèles ML.
 
-**Lecture :** la baseline = « dans le même rayon de tags, propose les blockbusters ». Le **modèle** doit faire mieux en remplaçant l’overlap naïf par l’**affinité de goûts** et en ajoutant **âge** + **sexe**.
+## Les méthodes (baseline + modèles)
 
-## Comment le modèle construit son score
+| Nom | En une phrase | Comment ça choisit les films |
+| --- | --- | --- |
+| **Baseline** | Règle simple sans ML | Même genre(s) que le film aimé, triés par note moyenne (train). |
+| **1. KMeans enrichi** | Regroupe les films qui se ressemblent | Ressemblance = **genres** + **profil du film** (note moyenne, volume de notes, public âge/sexe sur le train). On propose d'autres films du **même groupe**, un peu réordonnés selon l'âge/sexe de l'utilisateur (`α_age`, `α_sexe`). Ce n'est **pas** la baseline. |
+| **2. Item–item CF** | « Souvent aimés avec… » | Compare les films via les **notes des utilisateurs**. On agrège les voisins de tous les films déjà aimés (pondérés par la note). |
+| **3. LogisticRegression** | Estime la chance qu'un film plaise | Apprend une proba d'aimer selon âge, sexe, genres, overlap, note moyenne, même cluster ; on classe par cette proba. |
 
-À partir du film aimé, de l’âge et du sexe, chaque candidat du catalogue (hors film saisi) reçoit un **score** (top 5 produit ; top 10 en eval). Tableau trié du **plus important au moins important**.
+Toutes les méthodes **excluent** le film saisi et les films déjà aimés en train.
 
-| | Rôle dans le score |
-| --- | --- |
-| **1. Affinité de goûts** | Relie le film aimé aux candidats : plus les genres du candidat sont souvent notés haut **avec** ceux du film aimé (corr. des moyennes par user ; NaN ignorés ; multi-genres OK), plus le candidat monte. Signal genres principal, y compris sans tag en commun. |
-| **2. Âge** | Correctif profil le plus fort côté démographie (EDA) : les parts de notes bougent nettement avec la tranche (ex. Drama ~33 % → ~47 % de ≤17 à 55+ ; Action ~29 % → ~19 %). Un profil plus âgé pousse Drama/War ; un profil plus jeune pousse Action/Comedy/Children's. |
-| **3. Sexe** | Correctif profil plus modéré (écarts typiques de quelques points de % : Action ~−6 F−M, Romance ~+4). Affinage selon F/M (ex. +Romance/Drama femme ; +Action/Sci-Fi homme), sans l’ampleur des écarts liés à l’âge. |
-
-**Contrôle `α` :** ce n’est pas un facteur du score au même titre que les lignes ci-dessus, mais un **hyperparamètre** qui règle l’amplitude des correctifs **âge** puis **sexe** (avec régularisation), choisi par validation vs baseline. Trop fort → le top se détache du film aimé ; trop faible → le ranking repose surtout sur l’affinité seule.
-
-**Principe :** affinité + âge + sexe (l’âge pèse plus que le sexe d’après l’EDA). Pas de popularité ni d’overlap hard dans le modèle. Livrable : **top 5** ; métriques : Precision@5 et @10, comparées à la baseline.
+**Poids profil (KMeans) :** `α_age` et `α_sexe` règlent l'importance de l'âge et du sexe dans le re-ranking (âge un peu plus que le sexe). Trop forts → on s'éloigne du film aimé ; trop faibles → on retombe sur « meilleurs notes du cluster ».
 
 ## Pourquoi ces données permettent / ne permettent pas ce test
 
-**Permettent :** apprendre des liens genres ↔ profil (âge/sexe) et une affinité de goûts entre genres ; comparer à une baseline « overlap naïf + popularité » ; mesurer si le top-k contient des films vraiment notés ≥ 3 (Precision@5 et @10).
+**Permettent :** apprendre des groupes de films / similarités de genres / un score supervisé profil+contenu ; comparer à une baseline overlap+moyenne ; mesurer Precision@5/@10 (aimé ≥ 4).
 
-**Ne permettent pas :** modéliser le visionnage sans note ; généraliser hors panel MovieLens 1997–98 ; prouver une causalité âge/sexe → goût ; une reco riche hors genres (pas de synopsis, cast, etc.).
+**Ne permettent pas :** visionnage sans note ; généraliser hors MovieLens 1997–98 ; prouver une causalité âge/sexe → goût ; reco hors genres (synopsis, cast, etc.).
 
 **Biais à garder (EDA) :** hommes sur-représentés ; offre Drama / Comedy dominante ; « plus noté » ≠ « plus aimé » ; données historiques.
