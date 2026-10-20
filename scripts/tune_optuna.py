@@ -68,7 +68,8 @@ def _eval_trial_config(cfg: dict) -> float:
 
   train_frac = cfg["TRAIN_FRAC"]
   min_support = cfg["MIN_SUPPORT"]
-  cf_neighbors = cfg["CF_N_NEIGHBORS"]
+  cf_n_user = int(cfg["CF_N_USER"])
+  cf_n_film = int(cfg["CF_N_FILM"])
   hybrid_alpha = cfg["HYBRID_ALPHA"]
   hybrid_pool = cfg["HYBRID_POOL"]
   demo_sex_weight = cfg["DEMO_SEX_WEIGHT"]
@@ -149,7 +150,7 @@ def _eval_trial_config(cfg: dict) -> float:
   tfidf = TfidfTransformer()
   mat_iu_tfidf = tfidf.fit_transform(mat_iu)
 
-  n_ask_i = min(cf_neighbors + 1, len(items_u))
+  n_ask_i = min(cf_n_film + 1, len(items_u))
   nn_item = NearestNeighbors(metric="cosine", algorithm="brute")
   nn_item.fit(mat_iu_tfidf)
 
@@ -220,7 +221,7 @@ def _eval_trial_config(cfg: dict) -> float:
         neighbors.append((int(uid), demo * float(rat) / 5.0))
 
     neighbors.sort(key=lambda x: -x[1])
-    neighbors = neighbors[:cf_neighbors]
+    neighbors = neighbors[:cf_n_user]
 
     for vid, sim in neighbors:
       for mid, rat in liked_by_user.get(vid, []):
@@ -312,7 +313,8 @@ if __name__ == "__main__":
         cfg = {
             "TRAIN_FRAC": t.suggest_float("TRAIN_FRAC", 0.20, 0.85, step=0.05),
             "MIN_SUPPORT": t.suggest_int("MIN_SUPPORT", 1, 40),
-            "CF_N_NEIGHBORS": t.suggest_int("CF_N_NEIGHBORS", 20, 350, step=10),
+            "CF_N_USER": t.suggest_int("CF_N_USER", 20, 350, step=10),
+            "CF_N_FILM": t.suggest_int("CF_N_FILM", 20, 200, step=10),
             "HYBRID_ALPHA": t.suggest_float(
                 "HYBRID_ALPHA", 0.05, 0.95, step=0.05
             ),
