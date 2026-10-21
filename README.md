@@ -75,10 +75,16 @@ scope** du modèle (voir charter et EDA).
 
 ### Inférence produit (âge / sexe / films → top 5)
 
-Une fois (construit `artifacts/usercf.joblib`) :
+Deux modèles (switch aussi dans l'app Streamlit) :
+
+| `model=` | Source | Artefact |
+| --- | --- | --- |
+| `"cluster"` (défaut) | `MODEL_CLUSTER.ipynb` | `artifacts/cluster.joblib` |
+| `"cf"` | User–CF (`MODEL_CF`) | `artifacts/usercf.joblib` |
 
 ```bash
 source .venv/bin/activate
+python scripts/export_cluster.py
 python scripts/export_usercf.py
 ```
 
@@ -87,9 +93,8 @@ Puis dans Python :
 ```python
 from nextwatch_recommend import recommend, list_movies
 
-recommend(age=24, gender="M", liked_movies=[50, 174])
-# ou avec des titres :
-recommend(age=53, gender="F", liked_movies=["Star Wars (1977)"], k=5)
+recommend(age=24, gender="M", liked_movies=[50, 174], model="cluster")
+recommend(age=24, gender="M", liked_movies=[50, 174], model="cf")
 
 list_movies()              # tous les titres
 list_movies(with_ids=True) # [(id, titre), ...]

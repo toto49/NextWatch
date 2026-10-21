@@ -139,20 +139,41 @@ st.sidebar.info("💡 **NextWatch** est un système de recommandation basé sur 
 # --- PROFIL UTILISATEUR ---
 st.subheader("👤 Profil de l'utilisateur")
 
-col1, col2 = st.columns(2)
+col_genre, col_age, col_model = st.columns(3, gap="medium")
 
-with col1:
-    genre_label = st.segmented_control("Genre", ['Homme', 'Femme'], default='Homme')
+with col_genre:
+    genre_label = st.segmented_control(
+        "Genre",
+        ["Homme", "Femme"],
+        default="Homme",
+        width="stretch",
+    )
     gender = "M" if genre_label == "Homme" else "F"
 
-with col2:
-    age = st.number_input(label='Âge', min_value=7, max_value=73, value=25)
+with col_age:
+    age = st.number_input(
+        label="Âge",
+        min_value=7,
+        max_value=73,
+        value=25,
+        width="stretch",
+    )
+
+with col_model:
+    model_label = st.segmented_control(
+        "Modèle",
+        ["Cluster", "CF"],
+        default="Cluster",
+        help="Cluster = MODEL_CLUSTER · CF = User–CF",
+        width="stretch",
+    )
+    model = "cluster" if model_label == "Cluster" else "cf"
 
 st.write("")
 
 # --- CHARGEMENT DU CATALOGUE DE FILMS ---
 try:
-    movies_list = list_movies()
+    movies_list = list_movies(model=model)
 except Exception:
     movies_list = []
 
@@ -173,9 +194,20 @@ if st.button("Obtenir mes recommandations 🍿", type="primary", use_container_w
     else:
         with st.spinner("Analyse des préférences en cours..."):
             try:
-                # Récupération des IDs et des titres
-                recs_ids = recommend(age=age, gender=gender, liked_movies=choices, return_ids=True)
-                recs_titles = recommend(age=age, gender=gender, liked_movies=choices, return_ids=False)
+                recs_ids = recommend(
+                    age=age,
+                    gender=gender,
+                    liked_movies=choices,
+                    model=model,
+                    return_ids=True,
+                )
+                recs_titles = recommend(
+                    age=age,
+                    gender=gender,
+                    liked_movies=choices,
+                    model=model,
+                    return_ids=False,
+                )
                 
                 st.divider()
                 st.subheader("🎬 Tes cartes de recommandation :")
