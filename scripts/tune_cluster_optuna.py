@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Fine-tune MODEL_CLUSTER (groupes d'utilisateurs par goûts) avec Optuna.
+"""Fine-tune MODEL_CLUSTER (groupes d'utilisateurs + fusion UserCF) avec Optuna.
 
-Même recommandeur que ``notbook/MODEL_CLUSTER.ipynb`` :
-profils (moyenne de notes par genre + âge / sexe), KMeans, classement des
-films aimés dans le groupe, repli popularité si le groupe est trop pauvre.
+Pipeline (aligné sur ``notbook/MODEL_CLUSTER.ipynb``) :
+1. Profils users = moyennes de notes par genre + âge / sexe
+2. KMeans → ranking des films aimés dans le groupe
+3. UserCF démographique (témoin du notebook)
+4. Fusion RRF cluster ⊕ UserCF (leviers Optuna)
 
-Métrique : Precision@5 en mode produit (âge + sexe + 1–3 films, cold-start).
-``TRAIN_FRAC``, ``LIKED_THRESHOLD``, ``MAX_SEEDS`` et ``RANDOM_STATE`` sont
-fixés pour que les essais restent comparables au notebook.
+Métrique : Precision@5 cold-start produit (âge + sexe + 1–3 films).
+Protocole fixe : TRAIN_FRAC=0.65, aimé ≥ 4, MAX_SEEDS=3, seed=42.
 """
 
 from __future__ import annotations
@@ -47,12 +48,12 @@ GENRES = [
     "Western",
 ]
 
-# Protocole du notebook (ne pas tuner : ça changerait les cas d'évaluation).
 FIXED_TRAIN_FRAC = 0.65
 FIXED_RANDOM_STATE = 42
 FIXED_MAX_SEEDS = 3
 FIXED_LIKED_THRESHOLD = 4
-REC_K = 10  # comme evaluate_product ; la métrique ne lit que le top 5
+REC_K = 5
+POOL = 80  # taille des listes avant fusion RRF
 
 ROOT = Path(__file__).resolve().parents[1]
 N_TRIALS_DEFAULT = 300
@@ -77,11 +78,14 @@ def load_dataframe() -> pd.DataFrame:
     df = notes.merge(users, on="user_id", how="left").merge(
         films, left_on="item_id", right_on="movie_id", how="left"
     )
-    return df.loc[df["unknown"] != 1].drop(columns=["unknown"]).copy()
+    df = df.loc[df["unknown"] != 1].drop(columns=["unknown"]).copy()
+    df["genres"] = df[GENRES].apply(
+        lambda row: [g for g in GENRES if row[g] == 1], axis=1
+    )
+    return df
 
 
 def _build_user_genre_profiles(ratings: pd.DataFrame, movies: pd.DataFrame) -> pd.DataFrame:
-    """Moyenne de notes par genre (users × GENRES) + âge / sexe."""
     tm = ratings[["user_id", "item_id", "rating", "age", "gender"]].merge(
         movies[GENRES], left_on="item_id", right_index=True, how="left"
     )
@@ -95,24 +99,7 @@ def _build_user_genre_profiles(ratings: pd.DataFrame, movies: pd.DataFrame) -> p
     return prof
 
 
-def _query_vector(seeds, age, gender, film_genre_X: pd.DataFrame, scaler: StandardScaler):
-    """Profil cold-start : proxy LIKED_THRESHOLD sur les genres des seeds."""
-    genre_means = np.zeros(len(GENRES), dtype=float)
-    seed_list = [s for s in seeds if s in film_genre_X.index]
-    if seed_list:
-        proxy = float(FIXED_LIKED_THRESHOLD)
-        for j, g in enumerate(GENRES):
-            present = film_genre_X.loc[seed_list, g].to_numpy()
-            if present.sum() > 0:
-                genre_means[j] = proxy
-    age_val = 30.0 if age is None else float(age)
-    gender_m = 1.0 if (gender or "M") == "M" else 0.0
-    raw = np.concatenate([genre_means, [age_val, gender_m]])
-    return scaler.transform(raw.reshape(1, -1))[0]
-
-
 def _prepare(df: pd.DataFrame) -> dict:
-    """Split, cas produit et profils : indépendants des hypers tunés."""
     train = df.sample(frac=FIXED_TRAIN_FRAC, random_state=FIXED_RANDOM_STATE)
     test = df.drop(train.index)
     train = train.reset_index(drop=True)
@@ -120,6 +107,7 @@ def _prepare(df: pd.DataFrame) -> dict:
 
     movies = df.drop_duplicates("item_id").set_index("item_id")
     film_genre_X = movies[GENRES].astype(float)
+    movie_genres = movies["genres"].to_dict()
 
     film_stats = (
         train.groupby("item_id")["rating"]
@@ -160,25 +148,65 @@ def _prepare(df: pd.DataFrame) -> dict:
     profiles = _build_user_genre_profiles(train, movies)
     feat_cols = GENRES + ["age", "gender_m"]
     X_raw = profiles[feat_cols].fillna(0.0)
-    scaler = StandardScaler().fit(X_raw.values)
-    queries = np.vstack(
-        [
-            _query_vector(qids, age, gender, film_genre_X, scaler)
-            for qids, age, gender in zip(
-                eval_cases["query_ids"], eval_cases["age"], eval_cases["gender"]
-            )
-        ]
+
+    liked_by_user = (
+        liked_train.groupby("user_id")[["item_id", "rating"]]
+        .apply(lambda x: list(zip(x["item_id"].to_numpy(), x["rating"].to_numpy())))
+        .to_dict()
     )
+    fans_of = {
+        int(mid): list(
+            zip(
+                grp["user_id"].to_numpy(),
+                grp["rating"].to_numpy(),
+                grp["age"].to_numpy(),
+                grp["gender"].to_numpy(),
+            )
+        )
+        for mid, grp in liked_train.groupby("item_id")
+    }
+
+    seed_genre_masks = []
+    ages, genders_m, gender_labels = [], [], []
+    seed_sets, relevants, seed_lists = [], [], []
+    for qids, age, gender, rel in zip(
+        eval_cases["query_ids"],
+        eval_cases["age"],
+        eval_cases["gender"],
+        eval_cases["relevant_ids"],
+    ):
+        seeds = [int(x) for x in qids]
+        seed_lists.append(seeds)
+        seed_sets.append(set(seeds))
+        relevants.append({int(x) for x in rel})
+        ages.append(float(age))
+        genders_m.append(1.0 if gender == "M" else 0.0)
+        gender_labels.append(gender)
+        mask = np.zeros(len(GENRES), dtype=float)
+        present = [s for s in seeds if s in film_genre_X.index]
+        if present:
+            mask = (film_genre_X.loc[present].to_numpy().sum(axis=0) > 0).astype(float)
+        seed_genre_masks.append(mask)
 
     return {
         "film_stats": film_stats,
         "liked_train": liked_train[["user_id", "item_id", "rating"]].copy(),
         "user_ids": X_raw.index.astype(int).to_numpy(),
-        "X_scaled": scaler.transform(X_raw.values),
-        "queries": queries,
-        "seed_sets": [set(int(x) for x in q) for q in eval_cases["query_ids"]],
-        "relevants": [set(int(x) for x in rel) for rel in eval_cases["relevant_ids"]],
+        "X_raw": X_raw.to_numpy(dtype=float),
+        "n_genres": len(GENRES),
+        "film_genre_X": film_genre_X,
+        "movie_genres": movie_genres,
+        "liked_by_user": liked_by_user,
+        "fans_of": fans_of,
+        "seed_lists": seed_lists,
+        "seed_sets": seed_sets,
+        "seed_genre_masks": np.vstack(seed_genre_masks),
+        "ages": np.asarray(ages, dtype=float),
+        "genders_m": np.asarray(genders_m, dtype=float),
+        "gender_labels": gender_labels,
+        "relevants": relevants,
         "n_cases": int(len(eval_cases)),
+        "n_users_profiles": int(len(X_raw)),
     }
 
 
@@ -187,24 +215,93 @@ def _init_worker(df_dict: dict) -> None:
     _STATE = _prepare(pd.DataFrame(df_dict))
 
 
-def _precision_at_5(recommended: list, relevant: set) -> float:
-    top = recommended[:5]
-    if not top:
-        return 0.0
-    return sum(1 for mid in top if mid in relevant) / 5.0
+def _rrf_fuse(lists: list[list[int]], weights: list[float], rrf_k: float, k: int) -> list[int]:
+    scores: dict[int, float] = {}
+    for lst, w in zip(lists, weights):
+        if w <= 0:
+            continue
+        for rank, mid in enumerate(lst):
+            scores[mid] = scores.get(mid, 0.0) + w / (rrf_k + rank + 1)
+    return [m for m, _ in sorted(scores.items(), key=lambda x: (-x[1], x[0]))[:k]]
+
+
+def _user_cf_list(
+    seeds: list[int],
+    seen: set[int],
+    age: float,
+    gender: str,
+    *,
+    cf_n_user: int,
+    demo_sex_weight: float,
+    age_scale: float,
+    genre_boost: float,
+    movie_genres: dict,
+    fans_of: dict,
+    liked_by_user: dict,
+    pool: int,
+) -> list[int]:
+    neighbors = []
+    for qid in seeds:
+        for uid, rat, a, g in fans_of.get(qid, ()):
+            sex = 1.0 if g == gender else 0.0
+            age_term = 1.0 - min(abs(age - float(a)) / age_scale, 1.0)
+            sim = (
+                demo_sex_weight * sex + (1.0 - demo_sex_weight) * age_term
+            ) * float(rat) / 5.0
+            neighbors.append((int(uid), sim))
+    neighbors.sort(key=lambda x: -x[1])
+    neighbors = neighbors[:cf_n_user]
+
+    scores: dict[int, float] = {}
+    seed_g = set()
+    for qid in seeds:
+        seed_g.update(movie_genres.get(qid, []))
+    for vid, sim in neighbors:
+        for mid, rat in liked_by_user.get(vid, ()):
+            mid = int(mid)
+            if mid in seen:
+                continue
+            scores[mid] = scores.get(mid, 0.0) + float(sim) * float(rat)
+
+    if genre_boost > 1.0 and seed_g:
+        for mid in list(scores):
+            if seed_g & set(movie_genres.get(mid, [])):
+                scores[mid] *= genre_boost
+
+    return [m for m, _ in sorted(scores.items(), key=lambda x: (-x[1], x[0]))[:pool]]
 
 
 def _eval_trial_config(cfg: dict) -> float:
-    """Precision@5 de recommend_user_cluster (cold-start produit)."""
     global _STATE
     assert _STATE is not None
 
     min_support = int(cfg["MIN_SUPPORT"])
     n_clusters = int(cfg["N_CLUSTERS"])
     min_group = int(cfg["MIN_GROUP_CANDIDATES"])
+    demo_weight = float(cfg["DEMO_WEIGHT"])
+    seed_proxy = float(cfg["SEED_PROXY"])
+    rating_power = float(cfg["RATING_POWER"])
+    genre_boost = float(cfg["GENRE_BOOST"])
+    pop_blend = float(cfg["POP_BLEND"])
+    score_mode = cfg["SCORE_MODE"]
+    cf_n_user = int(cfg["CF_N_USER"])
+    demo_sex_weight = float(cfg["DEMO_SEX_WEIGHT"])
+    age_scale = float(cfg["AGE_SCALE"])
+    w_cluster = float(cfg["W_CLUSTER"])
+    w_cf = float(cfg["W_CF"])
+    rrf_k = float(cfg["RRF_K"])
 
-    X_scaled = _STATE["X_scaled"]
-    if n_clusters < 2 or n_clusters > len(X_scaled):
+    # Normalise les poids de fusion
+    w_sum = w_cluster + w_cf
+    if w_sum <= 0:
+        return 0.0
+    w_cluster /= w_sum
+    w_cf /= w_sum
+
+    X_base = _STATE["X_raw"]
+    n_g = _STATE["n_genres"]
+    n_users = _STATE["n_users_profiles"]
+    if n_clusters < 2 or n_clusters > n_users:
         return 0.0
 
     film_stats = _STATE["film_stats"]
@@ -214,7 +311,16 @@ def _eval_trial_config(cfg: dict) -> float:
     if len(eligible) == 0 or _STATE["n_cases"] == 0:
         return 0.0
     eligible_ids = set(int(i) for i in eligible.index)
-    pop_count = eligible["n_ratings"]
+    pop_count = eligible["n_ratings"].astype(float)
+    pop_max = float(pop_count.max()) or 1.0
+    pop_norm = {int(mid): float(n) / pop_max for mid, n in pop_count.items()}
+    pop_ranked = sorted(pop_norm.items(), key=lambda x: (-x[1], x[0]))
+
+    # --- Clustering ---
+    X = X_base.copy()
+    X[:, n_g:] *= demo_weight
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
 
     kmeans = KMeans(
         n_clusters=n_clusters, random_state=FIXED_RANDOM_STATE, n_init=10
@@ -226,67 +332,150 @@ def _eval_trial_config(cfg: dict) -> float:
 
     liked = _STATE["liked_train"].copy()
     liked["cluster"] = liked["user_id"].map(user_cluster)
-    cluster_film_scores: dict[int, dict] = {}
-    for cid, grp in liked.dropna(subset=["cluster"]).groupby("cluster"):
-        cluster_film_scores[int(cid)] = grp.groupby("item_id")["rating"].sum().to_dict()
+    liked = liked.dropna(subset=["cluster"])
+    liked["cluster"] = liked["cluster"].astype(int)
+    liked["w"] = np.power(liked["rating"].to_numpy(dtype=float), rating_power)
+
+    cluster_film_scores: dict[int, dict[int, float]] = {}
+    for cid, grp in liked.groupby("cluster"):
+        agg = (
+            grp.groupby("item_id")["w"].mean()
+            if score_mode == "mean"
+            else grp.groupby("item_id")["w"].sum()
+        )
+        cluster_film_scores[int(cid)] = {
+            int(mid): float(sc)
+            for mid, sc in agg.items()
+            if int(mid) in eligible_ids
+        }
+
+    masks = _STATE["seed_genre_masks"]
+    queries = np.zeros((_STATE["n_cases"], n_g + 2), dtype=float)
+    queries[:, :n_g] = masks * seed_proxy
+    queries[:, n_g] = _STATE["ages"] * demo_weight
+    queries[:, n_g + 1] = _STATE["genders_m"] * demo_weight
+    queries = scaler.transform(queries)
 
     centers = kmeans.cluster_centers_
-    queries = _STATE["queries"]
-    dists = np.linalg.norm(centers - queries[:, None, :], axis=2)
-    assigned = np.argmin(dists, axis=1)
-
-    # Listes déjà triées : le repli popularité ne dépend que du support.
-    pop_ranked = sorted(
-        ((int(mid), int(n)) for mid, n in pop_count.items()),
-        key=lambda x: (-x[1], x[0]),
+    assigned = np.argmin(
+        np.linalg.norm(centers[None, :, :] - queries[:, None, :], axis=2),
+        axis=1,
     )
-    ranked_by_cluster: dict[int, list] = {}
-    for cid, scores in cluster_film_scores.items():
-        ranked = [
-            (int(mid), sc)
-            for mid, sc in scores.items()
-            if int(mid) in eligible_ids
-        ]
-        ranked.sort(key=lambda x: (-x[1], x[0]))
-        ranked_by_cluster[cid] = ranked
+
+    ranked_by_cluster = {
+        cid: sorted(scores.items(), key=lambda x: (-x[1], x[0]))
+        for cid, scores in cluster_film_scores.items()
+    }
+
+    movie_genres = _STATE["movie_genres"]
+    fans_of = _STATE["fans_of"]
+    liked_by_user = _STATE["liked_by_user"]
+    pool_size = max(POOL, REC_K * 15)
 
     p5 = []
     for i, cid in enumerate(assigned):
         seen = _STATE["seed_sets"][i]
-        out = []
-        for mid, _sc in ranked_by_cluster.get(int(cid), ()):
-            if mid not in seen:
-                out.append(mid)
-            if len(out) >= REC_K:
-                break
-        if len(out) < min_group:
-            for mid, _n in pop_ranked:
-                if mid not in seen and mid not in out:
-                    out.append(mid)
-                if len(out) >= REC_K:
+        seeds = _STATE["seed_lists"][i]
+        seed_g = {GENRES[j] for j in range(len(GENRES)) if masks[i, j] > 0}
+
+        # Liste cluster (re-score genre + popularité)
+        entries = []
+        for mid, sc in ranked_by_cluster.get(int(cid), [])[:pool_size]:
+            if mid in seen:
+                continue
+            boost = (
+                genre_boost
+                if (genre_boost > 1.0 and seed_g & set(movie_genres.get(mid, [])))
+                else 1.0
+            )
+            entries.append((mid, sc * boost, pop_norm.get(mid, 0.0)))
+
+        if not entries:
+            cluster_list: list[int] = []
+        elif pop_blend <= 0.0:
+            entries.sort(key=lambda x: (-x[1], x[0]))
+            cluster_list = [m for m, _, _ in entries[:pool_size]]
+        else:
+            max_sc = max(sc for _, sc, _ in entries) or 1.0
+            blended = [
+                (mid, (1.0 - pop_blend) * (sc / max_sc) + pop_blend * pop)
+                for mid, sc, pop in entries
+            ]
+            blended.sort(key=lambda x: (-x[1], x[0]))
+            cluster_list = [m for m, _ in blended[:pool_size]]
+
+        if len(cluster_list) < min_group:
+            for mid, _ in pop_ranked:
+                if mid not in seen and mid not in cluster_list:
+                    cluster_list.append(mid)
+                if len(cluster_list) >= pool_size:
                     break
-        p5.append(_precision_at_5(out[:REC_K], _STATE["relevants"][i]))
+
+        # Liste UserCF
+        cf_list = _user_cf_list(
+            seeds,
+            seen,
+            float(_STATE["ages"][i]),
+            _STATE["gender_labels"][i],
+            cf_n_user=cf_n_user,
+            demo_sex_weight=demo_sex_weight,
+            age_scale=age_scale,
+            genre_boost=genre_boost,
+            movie_genres=movie_genres,
+            fans_of=fans_of,
+            liked_by_user=liked_by_user,
+            pool=pool_size,
+        )
+
+        fused = _rrf_fuse(
+            [cluster_list, cf_list],
+            [w_cluster, w_cf],
+            rrf_k=rrf_k,
+            k=REC_K,
+        )
+        hit = sum(1 for m in fused if m in _STATE["relevants"][i]) / float(REC_K)
+        p5.append(hit)
 
     return float(np.mean(p5))
 
 
+def _suggest_config(trial: optuna.Trial) -> dict:
+    return {
+        "MIN_SUPPORT": trial.suggest_int("MIN_SUPPORT", 8, 45),
+        "N_CLUSTERS": trial.suggest_int("N_CLUSTERS", 4, 24),
+        "MIN_GROUP_CANDIDATES": trial.suggest_int("MIN_GROUP_CANDIDATES", 1, 12),
+        "DEMO_WEIGHT": trial.suggest_float("DEMO_WEIGHT", 0.0, 2.5, step=0.1),
+        "SEED_PROXY": trial.suggest_float("SEED_PROXY", 3.0, 5.0, step=0.25),
+        "RATING_POWER": trial.suggest_float("RATING_POWER", 0.5, 2.5, step=0.25),
+        "GENRE_BOOST": trial.suggest_float("GENRE_BOOST", 1.0, 1.6, step=0.05),
+        "POP_BLEND": trial.suggest_float("POP_BLEND", 0.0, 0.5, step=0.05),
+        "SCORE_MODE": trial.suggest_categorical("SCORE_MODE", ["sum", "mean"]),
+        "CF_N_USER": trial.suggest_int("CF_N_USER", 40, 350, step=10),
+        "DEMO_SEX_WEIGHT": trial.suggest_float("DEMO_SEX_WEIGHT", 0.05, 0.6, step=0.05),
+        "AGE_SCALE": trial.suggest_int("AGE_SCALE", 20, 95, step=5),
+        "W_CLUSTER": trial.suggest_float("W_CLUSTER", 0.05, 1.0),
+        "W_CF": trial.suggest_float("W_CF", 0.05, 1.0),
+        "RRF_K": trial.suggest_int("RRF_K", 1, 60),
+    }
+
+
 def main(n_trials: int = N_TRIALS_DEFAULT, out_path: Path | None = None) -> dict:
-    print("=== Chargement des données (MODEL_CLUSTER — groupes users) ===")
+    print("=== Chargement des données (MODEL_CLUSTER — groupes + UserCF) ===")
     df = load_dataframe()
     df_dict = df.to_dict(orient="list")
 
-    # Un passage pour annoncer le nombre de cas (les workers refont le split).
     preview = _prepare(df)
     print(
         f"Cas d'évaluation : {preview['n_cases']} | "
+        f"profils users : {preview['n_users_profiles']} | "
         f"TRAIN_FRAC={FIXED_TRAIN_FRAC} | aimé ≥ {FIXED_LIKED_THRESHOLD}"
     )
     print(
         f"=== Optuna MODEL_CLUSTER ({n_trials} essais) — "
-        f"P@5 user_cluster_groups ==="
+        f"P@5 fusion cluster⊕UserCF ==="
     )
 
-    sampler = optuna.samplers.TPESampler(seed=FIXED_RANDOM_STATE, n_startup_trials=20)
+    sampler = optuna.samplers.TPESampler(seed=FIXED_RANDOM_STATE, n_startup_trials=40)
     study = optuna.create_study(direction="maximize", sampler=sampler)
 
     max_workers = os.cpu_count() or 4
@@ -300,33 +489,34 @@ def main(n_trials: int = N_TRIALS_DEFAULT, out_path: Path | None = None) -> dict
         for i in range(0, n_trials, max_workers):
             batch_size = min(max_workers, n_trials - i)
             trials = [study.ask() for _ in range(batch_size)]
-            configs = [
-                {
-                    "MIN_SUPPORT": t.suggest_int("MIN_SUPPORT", 8, 40),
-                    "N_CLUSTERS": t.suggest_int("N_CLUSTERS", 4, 20),
-                    "MIN_GROUP_CANDIDATES": t.suggest_int(
-                        "MIN_GROUP_CANDIDATES", 1, 10
-                    ),
-                }
-                for t in trials
-            ]
+            configs = [_suggest_config(t) for t in trials]
             results = list(executor.map(_eval_trial_config, configs))
             for trial, score in zip(trials, results):
                 study.tell(trial, score)
 
             completed = min(i + max_workers, n_trials)
+            batch = np.asarray(results, dtype=float)
             print(
-                f"[{completed}/{n_trials}] Meilleur P@5 actuel : "
-                f"{study.best_value:.4f}"
+                f"[{completed}/{n_trials}] "
+                f"batch P@5 min={batch.min():.4f} mean={batch.mean():.4f} "
+                f"max={batch.max():.4f} | meilleur={study.best_value:.4f}"
             )
 
+    bt = study.best_trial
     best = dict(study.best_params)
+    # Poids normalisés (lisibles dans le JSON)
+    ws, wc = best["W_CLUSTER"], best["W_CF"]
+    s = ws + wc
+    best["W_CLUSTER_NORM"] = ws / s
+    best["W_CF_NORM"] = wc / s
     best["LIKED_THRESHOLD"] = FIXED_LIKED_THRESHOLD
     best["MAX_SEEDS"] = FIXED_MAX_SEEDS
     best["TRAIN_FRAC"] = FIXED_TRAIN_FRAC
     best["RANDOM_STATE"] = FIXED_RANDOM_STATE
-    best["metric"] = "P@5_product_user_cluster"
+    best["metric"] = "P@5_product_cluster_usercf_rrf"
     best["best_P@5"] = study.best_value
+    best["n_trials"] = n_trials
+    best["best_trial_number"] = bt.number
 
     print("\n=== MEILLEURS HYPERPARAMÈTRES (MODEL_CLUSTER) ===")
     print(f"P@5 Max : {study.best_value:.4f}")
@@ -341,7 +531,7 @@ def main(n_trials: int = N_TRIALS_DEFAULT, out_path: Path | None = None) -> dict
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Optuna sur le clustering par groupes de goûts (MODEL_CLUSTER)."
+        description="Optuna MODEL_CLUSTER (groupes de goûts + fusion UserCF)."
     )
     parser.add_argument(
         "--n-trials",

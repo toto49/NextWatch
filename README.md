@@ -112,7 +112,7 @@ Résultats écrits dans [`results/tune_hyperparams.csv`](results/tune_hyperparam
 et [`results/best_hyperparams.json`](results/best_hyperparams.json).
 Copier ensuite les meilleurs params dans `notbook/MODEL_BASELINE.ipynb` si besoin.
 
-### Tuning MODEL_CLUSTER (groupes d'utilisateurs)
+### Tuning MODEL_CLUSTER (groupes + fusion UserCF)
 
 ```bash
 source .venv/bin/activate
@@ -120,9 +120,9 @@ python scripts/tune_cluster_optuna.py
 python scripts/tune_cluster_optuna.py --n-trials 30   # essai court
 ```
 
-Métrique : Precision@5 du recommandeur par groupes de goûts (cold-start produit).
-`TRAIN_FRAC` est fixé à 0.65 et le seuil « aimé » à 4. La recherche porte sur
-`N_CLUSTERS`, `MIN_SUPPORT` et `MIN_GROUP_CANDIDATES`. Sortie :
+Métrique : Precision@5 cold-start (fusion RRF cluster ⊕ UserCF).
+`TRAIN_FRAC=0.65`, aimé ≥ 4. Cherche notamment `N_CLUSTERS`, poids de
+fusion, `CF_N_USER`, `GENRE_BOOST`, `DEMO_WEIGHT`, etc. Sortie :
 [`results/best_hyperparams_cluster_optuna.json`](results/best_hyperparams_cluster_optuna.json).
 
 ## Personnes ayant accès au dépôt
