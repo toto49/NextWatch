@@ -47,7 +47,6 @@ GENRES = [
 FIXED_TRAIN_FRAC = 0.25
 FIXED_MIN_SUPPORT = 19
 RANDOM_STATE = 42
-LIKED_THRESHOLD = 4
 MAX_SEEDS = 3
 
 _DF: pd.DataFrame | None = None
@@ -73,7 +72,6 @@ def _eval_trial_config(args: tuple[dict, str]) -> float:
   assert _DF is not None
 
   random_state = 42
-  liked_threshold = 4
   max_seeds = 3
 
   min_support = cfg["MIN_SUPPORT"]
@@ -91,8 +89,14 @@ def _eval_trial_config(args: tuple[dict, str]) -> float:
   train = _DF.loc[train_idx].reset_index(drop=True)
   test = _DF.drop(train_idx).reset_index(drop=True)
 
-  liked_train = train.loc[train["rating"] >= LIKED_THRESHOLD]
-  liked_test = test.loc[test["rating"] >= LIKED_THRESHOLD]
+  # Aimé = note > moyenne de l'utilisateur (moyenne calculée sur le train)
+  user_mean = train.groupby("user_id")["rating"].mean()
+  train = train.copy()
+  test = test.copy()
+  train["user_mean"] = train["user_id"].map(user_mean)
+  test["user_mean"] = test["user_id"].map(user_mean)
+  liked_train = train.loc[train["rating"] > train["user_mean"]]
+  liked_test = test.loc[test["rating"] > test["user_mean"]]
   train_counts = train.groupby("item_id").size()
 
   cand_A = liked_train.copy()
@@ -164,7 +168,7 @@ def _eval_trial_config(args: tuple[dict, str]) -> float:
 
   # Preparation User-CF
   liked_by_user = (
-      train.loc[train["rating"] >= LIKED_THRESHOLD]
+      liked_train
       .groupby("user_id")[["item_id", "rating"]]
       .apply(lambda x: list(zip(x["item_id"], x["rating"])))
       .to_dict()
@@ -179,9 +183,7 @@ def _eval_trial_config(args: tuple[dict, str]) -> float:
               grp["gender"].to_numpy(),
           )
       )
-      for mid, grp in train.loc[train["rating"] >= LIKED_THRESHOLD].groupby(
-          "item_id"
-      )
+      for mid, grp in liked_train.groupby("item_id")
   }
 
   movies = _DF.drop_duplicates("item_id").set_index("item_id")

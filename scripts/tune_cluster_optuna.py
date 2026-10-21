@@ -44,7 +44,6 @@ GENRES = [
 # Aligné notebook MODEL_CLUSTER — ne pas tuner (sinon P@5 artificiel)
 FIXED_TRAIN_FRAC = 0.7
 FIXED_RANDOM_STATE = 42
-FIXED_LIKED_THRESHOLD = 4
 FIXED_MAX_SEEDS = 3
 
 _DF: pd.DataFrame | None = None
@@ -97,8 +96,14 @@ def _eval_trial_config(cfg: dict) -> float:
     return 0.0
   mean_rating = eligible["mean_rating"]
 
-  liked_train = train.loc[train["rating"] >= FIXED_LIKED_THRESHOLD]
-  liked_test = test.loc[test["rating"] >= FIXED_LIKED_THRESHOLD]
+  # Aimé = note > moyenne de l'utilisateur (moyenne calculée sur le train)
+  user_mean = train.groupby("user_id")["rating"].mean()
+  train = train.copy()
+  test = test.copy()
+  train["user_mean"] = train["user_id"].map(user_mean)
+  test["user_mean"] = test["user_id"].map(user_mean)
+  liked_train = train.loc[train["rating"] > train["user_mean"]]
+  liked_test = test.loc[test["rating"] > test["user_mean"]]
   train_counts = train.groupby("item_id").size()
 
   cand_A = liked_train.copy()
@@ -136,8 +141,7 @@ def _eval_trial_config(cfg: dict) -> float:
   all_movie_ids = film_genre_X.index.to_numpy()
 
   liked_by_user = (
-      train.loc[train["rating"] >= FIXED_LIKED_THRESHOLD]
-      .groupby("user_id")[["item_id", "rating"]]
+      liked_train.groupby("user_id")[["item_id", "rating"]]
       .apply(lambda x: list(zip(x["item_id"], x["rating"])))
       .to_dict()
   )
@@ -150,9 +154,7 @@ def _eval_trial_config(cfg: dict) -> float:
               grp["gender"].to_numpy(),
           )
       )
-      for mid, grp in train.loc[
-          train["rating"] >= FIXED_LIKED_THRESHOLD
-      ].groupby("item_id")
+      for mid, grp in liked_train.groupby("item_id")
   }
 
   train_movie_ids = train["item_id"].unique()
