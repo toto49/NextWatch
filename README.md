@@ -56,10 +56,19 @@ Le dataset contient :
 
 ## Objectif du projet
 
-NextWatch recommande un **top 5** de films proches d’un film aimé (au moins un
-genre en commun), avec un score genres **pondéré par l’âge et le sexe**.
-Le détail (question, features, baseline, Precision@5) est dans
+NextWatch recommande un **top 5** de films à partir d’âge, sexe et 1–3 films
+aimés. Le détail (question, features, baseline, Precision@5) est dans
 [`PROJECT_CHARTER.md`](PROJECT_CHARTER.md).
+
+### Notebooks
+
+| Fichier | Contenu |
+| --- | --- |
+| [`notbook/EDA_NextWatch.ipynb`](notbook/EDA_NextWatch.ipynb) | Exploration |
+| [`notbook/MODEL_BASELINE.ipynb`](notbook/MODEL_BASELINE.ipynb) | Dummy + baseline heuristique |
+| [`notbook/MODEL_CF.ipynb`](notbook/MODEL_CF.ipynb) | UserCF, FilmCF, hybride |
+| [`notbook/MODEL_CLUSTER.ipynb`](notbook/MODEL_CLUSTER.ipynb) | Experts sexe/âge/catégories |
+| [`notbook/CONCLUSION.ipynb`](notbook/CONCLUSION.ipynb) | Synthèse + variance P@5 + popularité (tous modèles) |
 
 Le dataset documente aussi le **métier** (`occupation`) ; ce signal est **hors
 scope** du modèle (voir charter et EDA).

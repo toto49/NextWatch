@@ -22,7 +22,7 @@ Chaque exemple est un couple *(profil + film aimé A, film candidat B)*.
 
 | | Définition |
 | --- | --- |
-| **\(y\)** (cible) | \(y = 1\) si la note user→B est **≥ 4**, sinon \(y = 0\). Ranking : maximiser les \(y=1\) dans le top-k (Precision@5 / @10). Poids plus fort si note **5**. |
+| **\(y\)** (cible) | \(y = 1\) si la note user→B est **strictement au-dessus de la moyenne des notes de cet utilisateur** (moyenne calculée sur le train), sinon \(y = 0\). Ranking : maximiser les \(y=1\) dans le top-k (Precision@5 / @10). Poids plus fort si note élevée. |
 | **\(X\)** | **Profil :** `age`, `gender`. **A / B :** vecteurs de `genres` (0/1). **Dérivés selon le modèle :** même cluster KMeans ; similarité cosine genres ; overlap de genres ; note moyenne train de B (sans fuite). |
 | **Sortie** | Score \(\hat{s}(X)\) par candidat B → top 5 (produit) / top 10 (eval). Pas de prédiction de la note 1–5 brute. |
 
@@ -41,7 +41,7 @@ Chaque exemple est un couple *(profil + film aimé A, film candidat B)*.
 | **Dummy** | Top-k films aléatoires (seed fixe) |
 | **Baseline** | Heuristique **sans ML** : overlap ≥ 1 genre avec A + **note moyenne train** (min. de notes). **Ce n’est pas le clustering.** |
 | **Modèles** | (1) **KMeans** films × genres ; (2) **Item–item CF** (`NearestNeighbors` cosine sur notes train) ; (3) **LogisticRegression** \(P(y=1 \mid X)\) — détail ci-dessous |
-| **Métrique** | **Precision@5** (principale) et **Precision@10** : part des films du top-k réellement aimés (note ≥ 4) sur le hold-out |
+| **Métrique** | **Precision@5** (principale) et **Precision@10** : part des films du top-k réellement aimés (note > moyenne user train) sur le hold-out |
 
 **Protocole d’évaluation :** film aimé A + profil → top-k ; on vérifie la présence de films B aimés cachés. On reporte P@5 / P@10 pour dummy, baseline et chaque modèle. En inférence produit : seul le film saisi est exclu.
 
@@ -70,7 +70,7 @@ Toutes les méthodes **excluent** le film saisi et les films déjà aimés en tr
 
 ## Pourquoi ces données permettent / ne permettent pas ce test
 
-**Permettent :** apprendre des groupes de films / similarités de genres / un score supervisé profil+contenu ; comparer à une baseline overlap+moyenne ; mesurer Precision@5/@10 (aimé ≥ 4).
+**Permettent :** apprendre des groupes de films / similarités de genres / un score supervisé profil+contenu ; comparer à une baseline overlap+moyenne ; mesurer Precision@5/@10 (aimé = note > moyenne user).
 
 **Ne permettent pas :** visionnage sans note ; généraliser hors MovieLens 1997–98 ; prouver une causalité âge/sexe → goût ; reco hors genres (synopsis, cast, etc.).
 
