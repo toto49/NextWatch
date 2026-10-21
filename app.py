@@ -129,7 +129,7 @@ st.markdown('Si une personne a aimé un film en 1997, quels autres films aurait-
 st.divider()
 
 # --- BARRE LATÉRALE ---
-st.sidebar.title('NextWatch 🎥')
+st.sidebar.title('NextWatch')
 st.sidebar.info("💡 **NextWatch** est un système de recommandation basé sur le jeu de données MovieLens 100k (1997-1998).")
 
 # --- CHARGEMENT DU CATALOGUE DE FILMS ---
@@ -185,7 +185,7 @@ if submit_btn:
                 recs_ids = recommend(age=age, gender=gender, liked_movies=choices, return_ids=True)
                 recs_titles = recommend(age=age, gender=gender, liked_movies=choices, return_ids=False)
 
-                default_poster = "https://via.placeholder.com/500x750?text=Pas+d'affiche"
+                default_poster = "https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?w=500&auto=format&fit=crop"
                 card_items = []
 
                 for i, (mid, title) in enumerate(zip(recs_ids, recs_titles), 1):
