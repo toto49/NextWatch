@@ -67,7 +67,7 @@ aimés. Le détail (question, features, baseline, Precision@5) est dans
 | [`notbook/EDA_NextWatch.ipynb`](notbook/EDA_NextWatch.ipynb) | Exploration |
 | [`notbook/MODEL_BASELINE.ipynb`](notbook/MODEL_BASELINE.ipynb) | Dummy + baseline heuristique |
 | [`notbook/MODEL_CF.ipynb`](notbook/MODEL_CF.ipynb) | UserCF, FilmCF, hybride |
-| [`notbook/MODEL_CLUSTER.ipynb`](notbook/MODEL_CLUSTER.ipynb) | Experts sexe/âge/catégories |
+| [`notbook/MODEL_CLUSTER.ipynb`](notbook/MODEL_CLUSTER.ipynb) | Groupes d'utilisateurs (goûts) |
 | [`notbook/CONCLUSION.ipynb`](notbook/CONCLUSION.ipynb) | Synthèse + variance P@5 + popularité (tous modèles) |
 
 Le dataset documente aussi le **métier** (`occupation`) ; ce signal est **hors
@@ -112,14 +112,17 @@ Résultats écrits dans [`results/tune_hyperparams.csv`](results/tune_hyperparam
 et [`results/best_hyperparams.json`](results/best_hyperparams.json).
 Copier ensuite les meilleurs params dans `notbook/MODEL_BASELINE.ipynb` si besoin.
 
-### Tuning MODEL_CLUSTER (experts + fusion)
+### Tuning MODEL_CLUSTER (groupes d'utilisateurs)
 
 ```bash
 source .venv/bin/activate
 python scripts/tune_cluster_optuna.py
+python scripts/tune_cluster_optuna.py --n-trials 30   # essai court
 ```
 
-`TRAIN_FRAC` est **fixé à 0.7** (comme `tune_optuna.py`). Sortie :
+Métrique : Precision@5 du recommandeur par groupes de goûts (cold-start produit).
+`TRAIN_FRAC` est fixé à 0.65 et le seuil « aimé » à 4. La recherche porte sur
+`N_CLUSTERS`, `MIN_SUPPORT` et `MIN_GROUP_CANDIDATES`. Sortie :
 [`results/best_hyperparams_cluster_optuna.json`](results/best_hyperparams_cluster_optuna.json).
 
 ## Personnes ayant accès au dépôt
