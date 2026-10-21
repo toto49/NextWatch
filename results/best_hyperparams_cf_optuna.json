@@ -1,0 +1,19 @@
+{
+  "MIN_SUPPORT": 34,
+  "CF_N_USER": 180,
+  "CF_N_FILM": 50,
+  "HYBRID_ALPHA": 0.75,
+  "HYBRID_POOL": 270,
+  "DEMO_SEX_WEIGHT": 0.05,
+  "AGE_SCALE": 30,
+  "GENRE_BOOST": 1.05,
+  "MAX_SEEDS": 7,
+  "RRF_K": 24,
+  "SUBLINEAR_TF": false,
+  "RATING_POWER": 0.75,
+  "MIN_GENRE_MATCH": 3,
+  "TRAIN_FRAC": 0.65,
+  "best_hybrid_P@5": 0.3054662379421222,
+  "associated_user_P@5": 0.26087888531618436,
+  "associated_film_P@5": 0.29817792068595933
+}

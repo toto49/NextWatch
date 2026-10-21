@@ -125,7 +125,7 @@ def recommend(
     Parameters
     ----------
     age : âge de l'utilisateur
-    gender : \"M\" ou \"F\"
+    gender : \"M\", \"F\", \"Homme\" ou \"Femme\"
     liked_movies : item_id (int) et/ou titres (str), 1 à 3 typiquement
     k : nombre de recommandations (défaut 5)
     return_ids : si True, renvoie des item_id au lieu des titres
@@ -143,9 +143,16 @@ def recommend(
     age_scale = float(params["AGE_SCALE"])
     rating_power = float(params["RATING_POWER"])
 
-    gender_val = str(gender).strip().upper()
-    if gender_val not in {"M", "F"}:
-        raise ValueError("gender doit être 'M' ou 'F'")
+    gender_input = str(gender).strip().casefold()
+    gender_values = {
+        "m": "M",
+        "homme": "M",
+        "f": "F",
+        "femme": "F",
+    }
+    if gender_input not in gender_values:
+        raise ValueError("gender doit être 'M', 'F', 'Homme' ou 'Femme'")
+    gender_val = gender_values[gender_input]
     age_val = float(age)
 
     seeds = _resolve_movie_ids(liked_movies, artifact)
