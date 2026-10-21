@@ -1,0 +1,15 @@
+{
+  "W_SEX": 0.7153234341052008,
+  "W_AGE": 0.14764099396811892,
+  "MIN_SUPPORT": 40,
+  "CF_N_USER": 320,
+  "AGE_BAND": 23,
+  "MIN_SEG_USERS": 35,
+  "N_CLUSTERS": 20,
+  "EXPERT_POOL": 140,
+  "GENRE_BOOST": 1.0,
+  "W_CAT": 0.13703557192668026,
+  "TRAIN_FRAC": 0.25,
+  "metric": "P@5_product_cluster_fusion",
+  "best_P@5": 0.3376873661670236
+}

@@ -81,6 +81,16 @@ Résultats écrits dans [`results/tune_hyperparams.csv`](results/tune_hyperparam
 et [`results/best_hyperparams.json`](results/best_hyperparams.json).
 Copier ensuite les meilleurs params dans `notbook/MODEL_BASELINE.ipynb` si besoin.
 
+### Tuning MODEL_CLUSTER (experts + fusion)
+
+```bash
+source .venv/bin/activate
+python scripts/tune_cluster_optuna.py
+```
+
+`TRAIN_FRAC` est **fixé à 0.7** (comme `tune_optuna.py`). Sortie :
+[`results/best_hyperparams_cluster_optuna.json`](results/best_hyperparams_cluster_optuna.json).
+
 ## Personnes ayant accès au dépôt
 
 | Identité | Nom | Prénom

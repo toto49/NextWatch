@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Fine-tune NextWatch avec Optuna - Exploration complète de TRAIN_FRAC (0.20 à 0.85)."""
+"""Fine-tune NextWatch (hybride Film×User) avec Optuna.
+
+TRAIN_FRAC est fixé à 0.7 pour un protocole d'éval stable (pas dans la search).
+"""
 
 from __future__ import annotations
 
@@ -18,6 +21,8 @@ from sklearn.neighbors import NearestNeighbors
 
 # Masquer les logs verbeux
 optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+FIXED_TRAIN_FRAC = 0.7
 
 GENRES = [
     "Action",
@@ -66,7 +71,6 @@ def _eval_trial_config(cfg: dict) -> float:
   liked_threshold = 4
   max_seeds = 3
 
-  train_frac = cfg["TRAIN_FRAC"]
   min_support = cfg["MIN_SUPPORT"]
   cf_n_user = int(cfg["CF_N_USER"])
   cf_n_film = int(cfg["CF_N_FILM"])
@@ -75,9 +79,9 @@ def _eval_trial_config(cfg: dict) -> float:
   demo_sex_weight = cfg["DEMO_SEX_WEIGHT"]
   age_scale = float(cfg["AGE_SCALE"])
 
-  # 1. Split Train / Test (sans chevauchement)
+  # 1. Split Train / Test (sans chevauchement) — TRAIN_FRAC fixé
   train_idx = _DF.sample(
-      frac=train_frac, random_state=random_state
+      frac=FIXED_TRAIN_FRAC, random_state=random_state
   ).index
   train = _DF.loc[train_idx].reset_index(drop=True)
   test = _DF.drop(train_idx).reset_index(drop=True)
@@ -288,8 +292,8 @@ if __name__ == "__main__":
   df_dict = df.to_dict(orient="list")
 
   print(
-      f"=== Lancement Optuna ({N_TRIALS} essais) — TRAIN_FRAC de 0.20 à 0.85"
-      " ==="
+      f"=== Lancement Optuna ({N_TRIALS} essais) — "
+      f"TRAIN_FRAC fixé={FIXED_TRAIN_FRAC} ==="
   )
 
   sampler = optuna.samplers.TPESampler(seed=42, n_startup_trials=40)
@@ -311,7 +315,6 @@ if __name__ == "__main__":
       configs = []
       for t in trials:
         cfg = {
-            "TRAIN_FRAC": t.suggest_float("TRAIN_FRAC", 0.20, 0.85, step=0.05),
             "MIN_SUPPORT": t.suggest_int("MIN_SUPPORT", 1, 40),
             "CF_N_USER": t.suggest_int("CF_N_USER", 20, 350, step=10),
             "CF_N_FILM": t.suggest_int("CF_N_FILM", 20, 200, step=10),
@@ -336,11 +339,15 @@ if __name__ == "__main__":
           f"[{completed}/{N_TRIALS}] Meilleur P@5 actuel : {study.best_value:.4f}"
       )
 
+  best = dict(study.best_params)
+  best["TRAIN_FRAC"] = FIXED_TRAIN_FRAC
+  best["best_P@5"] = study.best_value
+
   print("\n=== MEILLEURS HYPERPARAMÈTRES TROUVÉS ===")
   print(f"P@5 Max : {study.best_value:.4f}")
-  print(json.dumps(study.best_params, indent=2))
+  print(json.dumps(best, indent=2))
 
   out_path = Path("results/best_hyperparams_optuna.json")
   out_path.parent.mkdir(parents=True, exist_ok=True)
-  out_path.write_text(json.dumps(study.best_params, indent=2), encoding="utf-8")
+  out_path.write_text(json.dumps(best, indent=2), encoding="utf-8")
   print(f"\nRésultats exportés dans : {out_path}")
