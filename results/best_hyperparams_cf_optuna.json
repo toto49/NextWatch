@@ -1,0 +1,13 @@
+{
+  "MIN_SUPPORT": 39,
+  "CF_N_USER": 30,
+  "CF_N_FILM": 40,
+  "HYBRID_ALPHA": 0.25,
+  "HYBRID_POOL": 110,
+  "DEMO_SEX_WEIGHT": 0.1,
+  "AGE_SCALE": 45,
+  "GENRE_BOOST": 1.3,
+  "TARGET_MODEL": "film_cf",
+  "TRAIN_FRAC": 0.65,
+  "best_P@5": 0.20321888412017167
+}
