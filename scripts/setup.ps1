@@ -4,8 +4,8 @@ $ErrorActionPreference = "Stop"
 $RootDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $RootDir
 
-$MinMajor = 3
-$MinMinor = 10
+$RequiredMajor = 3
+$RequiredMinor = 14
 
 $PythonCmd = $null
 foreach ($candidate in @("python", "py")) {
@@ -19,7 +19,7 @@ foreach ($candidate in @("python", "py")) {
 }
 
 if (-not $PythonCmd) {
-    Write-Error "Erreur: Python n'est pas installé. Installez Python $MinMajor.$MinMinor+ puis relancez ce script."
+    Write-Error "Erreur: Python n'est pas installé. Installez Python $RequiredMajor.$RequiredMinor puis relancez ce script."
     exit 1
 }
 
@@ -29,8 +29,8 @@ $Major = [int]$VersionLines[0]
 $Minor = [int]$VersionLines[1]
 $Version = "$Major.$Minor"
 
-if ($Major -lt $MinMajor -or ($Major -eq $MinMajor -and $Minor -lt $MinMinor)) {
-    Write-Error "Erreur: Python $MinMajor.$MinMinor+ requis (trouvé: $Version)."
+if ($Major -ne $RequiredMajor -or $Minor -ne $RequiredMinor) {
+    Write-Error "Erreur: Python $RequiredMajor.$RequiredMinor requis (trouvé: $Version)."
     exit 1
 }
 

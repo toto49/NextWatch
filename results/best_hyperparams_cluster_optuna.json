@@ -1,15 +1,23 @@
 {
-  "MIN_SUPPORT": 35,
-  "CF_N_USER": 320,
-  "AGE_BAND": 24,
-  "MIN_SEG_USERS": 15,
-  "N_CLUSTERS": 6,
-  "EXPERT_POOL": 180,
-  "GENRE_BOOST": 1.2,
-  "W_SEX": 0.4889468193526211,
-  "W_AGE": 0.40601380146372423,
-  "W_CAT": 0.10503937918365475,
-  "TRAIN_FRAC": 0.65,
-  "metric": "P@5_product_cluster_fusion",
-  "best_P@5": 0.19146211312700107
+  "MIN_SUPPORT": 9,
+  "N_CLUSTERS": 4,
+  "MIN_GROUP_CANDIDATES": 1,
+  "SEED_PROXY": 3.25,
+  "RATING_POWER": 2.0,
+  "GENRE_BOOST": 1.0,
+  "SCORE_MODE": "sum",
+  "metric": "precision@5",
+  "validation_score": null,
+  "n_trials": 0,
+  "model": "cluster_pure",
+  "status": "fallback_from_previous_search_after_full_retuning_timeout",
+  "protocol": {
+    "random_state": 42,
+    "train_frac": 0.65,
+    "validation_frac": 0.15,
+    "test_frac": 0.2,
+    "max_seeds": 3,
+    "liked_definition": "rating > user_mean(reference)",
+    "seed_selection": "deterministic_random_1_to_3"
+  }
 }

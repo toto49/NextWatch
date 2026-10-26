@@ -1,63 +1,84 @@
-"""Inférence produit NextWatch (User–CF).
+"""Inférence produit NextWatch — Cluster (MODEL_CLUSTER) ou User–CF (MODEL_CF).
 
-Prérequis : lancer une fois
-  python scripts/export_usercf.py
+Prérequis :
+  python scripts/Models/export_cluster.py
+  python scripts/Models/export_usercf.py
 
 Exemple :
   from nextwatch_recommend import recommend, list_movies
-  recommend(age=24, gender=\"M\", liked_movies=[50, 174])
-  # → [\"Raiders of the Lost Ark (1981)\", ...]
-  list_movies()           # tous les titres (triés)
-  list_movies(with_ids=True)  # [(id, titre), ...]
+  recommend(age=24, gender=\"M\", liked_movies=[50, 174], model=\"cluster\")
+  recommend(age=24, gender=\"M\", liked_movies=[50, 174], model=\"cf\")
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Literal
 
 import joblib
+import numpy as np
+
+from scripts.evaluation_protocol import dataset_fingerprint, runtime_versions
 
 ROOT = Path(__file__).resolve().parent
-DEFAULT_ARTIFACT = ROOT / "artifacts" / "usercf.joblib"
+CLUSTER_ARTIFACT = ROOT / "artifacts" / "cluster.joblib"
+CF_ARTIFACT = ROOT / "artifacts" / "usercf.joblib"
 
-_ARTIFACT: dict | None = None
+ModelName = Literal["cluster", "cf"]
+
+_CACHE: dict[str, tuple[Path, float, dict]] = {}
 
 
-def load(path: Path | str | None = None) -> dict:
-    """Charge (ou recharge) l'artefact joblib."""
-    global _ARTIFACT
-    p = Path(path) if path is not None else DEFAULT_ARTIFACT
+def _artifact_path_for(model: ModelName) -> Path:
+    if model == "cluster":
+        p = CLUSTER_ARTIFACT
+        hint = "python scripts/Models/export_cluster.py"
+    else:
+        p = CF_ARTIFACT
+        hint = "python scripts/Models/export_usercf.py"
     if not p.exists():
-        raise FileNotFoundError(
-            f"Artefact introuvable : {p}\n"
-            "Lance d'abord : python scripts/export_usercf.py"
+        raise FileNotFoundError(f"Artefact introuvable : {p}\nLance d'abord : {hint}")
+    return p
+
+
+def load(model: ModelName = "cluster", path: Path | str | None = None) -> dict:
+    """Charge (ou recharge si mtime changé) l'artefact du modèle demandé."""
+    p = Path(path) if path is not None else _artifact_path_for(model)
+    if not p.exists():
+        raise FileNotFoundError(f"Artefact introuvable : {p}")
+    mtime = p.stat().st_mtime
+    key = str(p.resolve())
+    cached = _CACHE.get(key)
+    if cached is not None and cached[0] == p and cached[1] == mtime:
+        return cached[2]
+    artifact = joblib.load(p)
+    meta = artifact.get("meta", {})
+    if meta.get("dataset_sha256") != dataset_fingerprint():
+        raise RuntimeError(
+            f"Artefact incompatible avec les données courantes : {p}. "
+            "Régénérez les artefacts."
         )
-    _ARTIFACT = joblib.load(p)
-    return _ARTIFACT
-
-
-def _get_artifact() -> dict:
-    if _ARTIFACT is None:
-        return load()
-    return _ARTIFACT
+    if meta.get("runtime_versions") != runtime_versions():
+        raise RuntimeError(
+            f"Artefact incompatible avec l'environnement Python courant : {p}. "
+            "Réinstallez requirements.txt puis régénérez les artefacts."
+        )
+    _CACHE[key] = (p, mtime, artifact)
+    return artifact
 
 
 def list_movies(
     *,
     with_ids: bool = False,
-    artifact_path: Path | str | None = None,
+    model: ModelName = "cluster",
 ) -> list[str] | list[tuple[int, str]]:
-    """Retourne tout le catalogue de films (titres triés alphabétiquement).
-
-    Parameters
-    ----------
-    with_ids : si True, renvoie ``[(item_id, titre), ...]`` au lieu des titres seuls.
-    """
-    if artifact_path is not None:
-        artifact = load(artifact_path)
-    else:
-        artifact = _get_artifact()
+    """Catalogue de films (titres triés)."""
+    # Les deux artefacts partagent le même catalogue ; cluster en priorité.
+    try:
+        artifact = load(model)
+    except FileNotFoundError:
+        other: ModelName = "cf" if model == "cluster" else "cluster"
+        artifact = load(other)
 
     movie_title: dict[int, str] = artifact["movie_title"]
     items = sorted(movie_title.items(), key=lambda x: x[1].lower())
@@ -82,7 +103,6 @@ def _resolve_movie_ids(liked_movies: Iterable, artifact: dict) -> list[int]:
         if key in title_to_id:
             out.append(title_to_id[key])
             continue
-        # match partiel sur le titre
         hits = [i for t, i in title_to_id.items() if key in t]
         if len(hits) == 1:
             out.append(hits[0])
@@ -98,74 +118,100 @@ def _resolve_movie_ids(liked_movies: Iterable, artifact: dict) -> list[int]:
     return out
 
 
-def _demo_sim(
-    age_a: float,
-    gender_a: str,
-    age_b: float,
-    gender_b: str,
-    *,
-    demo_sex_weight: float,
-    age_scale: float,
-) -> float:
-    sex = 1.0 if gender_a == gender_b else 0.0
-    age_term = 1.0 - min(abs(float(age_a) - float(age_b)) / age_scale, 1.0)
-    return demo_sex_weight * sex + (1.0 - demo_sex_weight) * age_term
+def _normalize_gender(gender: str) -> str:
+    gender_input = str(gender).strip().casefold()
+    gender_values = {"m": "M", "homme": "M", "f": "F", "femme": "F"}
+    if gender_input not in gender_values:
+        raise ValueError("gender doit être 'M', 'F', 'Homme' ou 'Femme'")
+    return gender_values[gender_input]
 
 
-def recommend(
-    age: float | int,
+def _recommend_user_cluster(
+    seeds: list[int],
+    age: float,
     gender: str,
-    liked_movies: Iterable,
-    *,
-    return_ids: bool = False,
-    artifact_path: Path | str | None = None,
-) -> list[str] | list[int]:
-    """Recommande k films à partir de l'âge, du sexe et de 1–3 films aimés.
+    artifact: dict,
+    k: int,
+) -> list[int]:
+    """Aligné sur ``recommend_user_cluster`` de ``MODEL_CLUSTER.ipynb``."""
+    params = artifact["params"]
+    genres: list[str] = artifact["genres"]
+    n_g = len(genres)
+    seed_proxy = float(params.get("SEED_PROXY", params.get("LIKED_THRESHOLD", 4)))
+    min_group = int(params["MIN_GROUP_CANDIDATES"])
+    genre_boost = float(params.get("GENRE_BOOST", 1.0))
 
-    Parameters
-    ----------
-    age : âge de l'utilisateur
-    gender : \"M\" ou \"F\"
-    liked_movies : item_id (int) et/ou titres (str), 1 à 3 typiquement
-    k : nombre de recommandations (défaut 5)
-    return_ids : si True, renvoie des item_id au lieu des titres
-    """
-    k: int = 5
+    film_genre_matrix: dict[int, list[float]] = artifact["film_genre_matrix"]
+    pop_count: dict[int, int] = artifact["pop_count"]
+    cluster_film_scores: dict[int, dict[int, float]] = artifact["cluster_film_scores"]
+    eligible_ids: set[int] = set(artifact["eligible_ids"])
+    centers = np.asarray(artifact["kmeans_centers"], dtype=float)
+    scaler = artifact["scaler"]
 
-    if artifact_path is not None:
-        artifact = load(artifact_path)
-    else:
-        artifact = _get_artifact()
+    seen = set(seeds)
 
+    # Cold-start : genres des seeds = proxy ; reste = moyenne train (comme le notebook)
+    raw = np.asarray(scaler.mean_, dtype=float).copy()
+    seed_mask = np.zeros(n_g, dtype=bool)
+    for qid in seeds:
+        vec = film_genre_matrix.get(qid)
+        if vec is None:
+            continue
+        seed_mask |= np.asarray(vec, dtype=float) > 0
+    raw[:n_g][seed_mask] = seed_proxy
+    raw[n_g] = float(age)
+    raw[n_g + 1] = 1.0 if gender == "M" else 0.0
+    query = scaler.transform(raw.reshape(1, -1))[0]
+    cid = int(np.argmin(np.linalg.norm(centers - query, axis=1)))
+
+    # Ranking : overlap genres seeds, puis score cluster (somme de notes)
+    ranked = []
+    for mid, sc in cluster_film_scores.get(cid, {}).items():
+        if mid in seen or mid not in eligible_ids:
+            continue
+        vec = film_genre_matrix.get(mid)
+        overlap = 0
+        if vec is not None and seed_mask.any():
+            overlap = int(np.sum((np.asarray(vec, dtype=float) > 0) & seed_mask))
+        ranked.append((mid, overlap, float(sc) * (genre_boost**overlap)))
+    ranked.sort(key=lambda x: (-x[1], -x[2], x[0]))
+    out = [m for m, _, _ in ranked[:k]]
+
+    if len(out) < min_group:
+        pop = sorted(
+            ((mid, n) for mid, n in pop_count.items() if mid not in seen),
+            key=lambda x: (-x[1], x[0]),
+        )
+        for mid, _ in pop:
+            if mid not in out:
+                out.append(mid)
+            if len(out) >= k:
+                break
+    return out[:k]
+
+
+def _recommend_usercf(
+    age: float,
+    gender: str,
+    seeds: list[int],
+    artifact: dict,
+    k: int,
+) -> list[int]:
+    """Aligné sur l'artefact User–CF (``MODEL_CF`` / ``export_usercf.py``)."""
     params = artifact["params"]
     cf_n_user = int(params["CF_N_USER"])
     demo_sex_weight = float(params["DEMO_SEX_WEIGHT"])
     age_scale = float(params["AGE_SCALE"])
     rating_power = float(params["RATING_POWER"])
+    eligible_ids = set(artifact["eligible_ids"])
 
-    gender_val = str(gender).strip().upper()
-    if gender_val not in {"M", "F"}:
-        raise ValueError("gender doit être 'M' ou 'F'")
-    age_val = float(age)
-
-    seeds = _resolve_movie_ids(liked_movies, artifact)
     seen = set(seeds)
-
-    fans_of = artifact["fans_of"]
-    liked_by_user = artifact["liked_by_user"]
-    movie_title = artifact["movie_title"]
-
     neighbors: list[tuple[int, float]] = []
     for qid in seeds:
-        for uid, rat, a, g in fans_of.get(qid, []):
-            sim = _demo_sim(
-                age_val,
-                gender_val,
-                a,
-                g,
-                demo_sex_weight=demo_sex_weight,
-                age_scale=age_scale,
-            )
+        for uid, rat, a, g in artifact["fans_of"].get(qid, []):
+            sex = 1.0 if g == gender else 0.0
+            age_term = 1.0 - min(abs(age - float(a)) / age_scale, 1.0)
+            sim = demo_sex_weight * sex + (1.0 - demo_sex_weight) * age_term
             weighted_rat = (float(rat) ** rating_power) / (5.0**rating_power)
             neighbors.append((int(uid), sim * weighted_rat))
     neighbors.sort(key=lambda x: -x[1])
@@ -173,23 +219,55 @@ def recommend(
 
     scores: dict[int, float] = {}
     for vid, sim in neighbors:
-        for mid, rat in liked_by_user.get(vid, []):
+        for mid, rat in artifact["liked_by_user"].get(vid, []):
             mid = int(mid)
-            if mid in seen:
+            if mid in seen or mid not in eligible_ids:
                 continue
             scores[mid] = scores.get(mid, 0.0) + float(sim) * (
                 float(rat) ** rating_power
             )
+    return [m for m, _ in sorted(scores.items(), key=lambda x: (-x[1], x[0]))[:k]]
 
-    ranked = [m for m, _ in sorted(scores.items(), key=lambda x: (-x[1], x[0]))[:k]]
+
+def recommend(
+    age: float | int,
+    gender: str,
+    liked_movies: Iterable,
+    *,
+    model: ModelName = "cluster",
+    k: int = 5,
+    return_ids: bool = False,
+    artifact_path: Path | str | None = None,
+) -> list[str] | list[int]:
+    """Top-k selon ``model`` : ``\"cluster\"`` (MODEL_CLUSTER) ou ``\"cf\"`` (User–CF)."""
+    if k < 1:
+        raise ValueError("k doit être ≥ 1")
+    if model not in ("cluster", "cf"):
+        raise ValueError("model doit être 'cluster' ou 'cf'")
+
+    artifact = load(model, path=artifact_path)
+    gender_val = _normalize_gender(gender)
+    age_val = float(age)
+    seeds = _resolve_movie_ids(liked_movies, artifact)
+
+    if model == "cluster":
+        ranked = _recommend_user_cluster(seeds, age_val, gender_val, artifact, k)
+    else:
+        ranked = _recommend_usercf(age_val, gender_val, seeds, artifact, k)
+
+    movie_title = artifact["movie_title"]
     if return_ids:
         return ranked
     return [movie_title[m] for m in ranked]
 
 
 if __name__ == "__main__":
-    # Démo rapide
-    titles = recommend(age=24, gender="M", liked_movies=[50, 174])
-    print("Input : age=24, gender=M, films=[50, 174]")
-    for i, t in enumerate(titles, 1):
-        print(f"  {i}. {t}")
+    for m in ("cluster", "cf"):
+        try:
+            titles = recommend(age=24, gender="M", liked_movies=[50, 174], model=m)
+        except FileNotFoundError as e:
+            print(f"[{m}] {e}")
+            continue
+        print(f"\n[{m}] age=24, gender=M, films=[50, 174]")
+        for i, t in enumerate(titles, 1):
+            print(f"  {i}. {t}")

@@ -1,136 +1,222 @@
 # NextWatch
 
-## Environnement Jupyter
+Système de recommandation de films (MovieLens 100k) : à partir de l’**âge**, du
+**sexe** et de **1–3 films aimés**, l’app propose un **top 5**.
 
-Prérequis : **Python 3.10+** installé sur la machine (Windows, macOS ou Linux).
+L’interface (`app.py`) permet de choisir le modèle (**Cluster** ou **CF**), le
+profil, jusqu’à 3 films, puis d’afficher les recommandations avec posters IMDb.
 
-### Installation
+Le détail (question, features, baseline, Precision@5) est dans
+[`PROJECT_CHARTER.md`](PROJECT_CHARTER.md).
+
+## Lancer l’app (Docker — recommandé)
+
+Prérequis : [Docker](https://docs.docker.com/get-docker/).
+
+L’image est définie par [`Dockerfile`](Dockerfile) (deps via
+[`requirements.txt`](requirements.txt), lancement de `app.py` sur le port
+**8501**). Les fichiers inutiles sont exclus par [`.dockerignore`](.dockerignore).
+
+Les artefacts `artifacts/cluster.joblib` et `artifacts/usercf.joblib` sont
+déjà dans le dépôt et inclus au build.
+
+```bash
+docker build -t nextwatch .
+docker run --rm -p 8501:8501 nextwatch
+```
+
+Puis ouvrir [http://localhost:8501](http://localhost:8501).
+
+Arrêt : `Ctrl+C`, ou `docker stop <CONTAINER_ID>` après `docker ps`.
+
+| `model=` | Source | Artefact |
+| --- | --- | --- |
+| `"cluster"` (défaut) | `MODEL_CLUSTER.ipynb` | `artifacts/cluster.joblib` |
+| `"cf"` | User–CF (`MODEL_CF`) | `artifacts/usercf.joblib` |
+
+## Environnement Python (notebooks, tuning, exports)
+
+Prérequis : **Python 3.14**. Les versions directes sont figées dans
+[`requirements.txt`](requirements.txt), comme l’image Docker.
 
 **Linux / macOS :**
 
 ```bash
 ./scripts/setup.sh
+source .venv/bin/activate
 ```
 
 **Windows (PowerShell) :**
 
 ```powershell
 .\scripts\setup.ps1
+.\.venv\Scripts\Activate.ps1
 ```
 
-Le script crée un environnement virtuel `.venv`, installe les dépendances de
-[`requirements.txt`](requirements.txt) et enregistre le kernel Jupyter
-**NextWatch**.
+Le script crée `.venv`, installe [`requirements.txt`](requirements.txt) et
+enregistre le kernel Jupyter **NextWatch**.
 
-### Lancement
+### Streamlit en local (bonus)
 
-**Linux / macOS :**
+Utile pour développer l’UI sans rebuild Docker :
+
+```bash
+source .venv/bin/activate
+streamlit run app.py
+```
+
+Puis [http://localhost:8501](http://localhost:8501). Arrêt : `Ctrl+C`.
+
+### Régénérer les résultats et les artefacts
+
+```bash
+python scripts/tuner/tune_optuna.py --n-trials 300
+python scripts/tuner/tune_cluster_optuna.py --n-trials 300
+python scripts/Models/export_cluster.py
+python scripts/Models/export_usercf.py
+python scripts/Models/evaluate_final.py
+```
+
+Cet ordre est obligatoire : tuning sur la validation, reconstruction sur
+apprentissage+validation, puis consommation unique du test final. La synthèse
+officielle est écrite dans `results/final_evaluation.json`.
+
+### Résultat final actuel
+
+Sur 921 cas test communs :
+
+- baseline overlap+moyenne : P@5 = **0,0343** ;
+- Cluster utilisateurs : P@5 = **0,0504** ;
+- User–User CF : P@5 = **0,0932**.
+
+UserCF est donc le meilleur des deux modèles servis sur ce protocole. Son tuning
+a été recalculé sur 300 essais. Le tuning Cluster complet a été interrompu après
+environ 16 minutes ; son artefact utilise un fallback compatible provenant de
+la recherche précédente et ne doit pas être présenté comme optimal.
+
+### Test rapide sans UI
+
+```bash
+python nextwatch_recommend.py
+```
+
+Ou en Python :
+
+```python
+from nextwatch_recommend import recommend, list_movies
+
+recommend(age=24, gender="M", liked_movies=[50, 174], model="cluster")
+recommend(age=24, gender="M", liked_movies=[50, 174], model="cf")
+list_movies()
+list_movies(with_ids=True)
+```
+
+## Notebooks (Jupyter)
 
 ```bash
 source .venv/bin/activate
 jupyter notebook
 ```
 
-**Windows (PowerShell) :**
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-jupyter notebook
-```
-
-Dans Jupyter, choisissez le kernel **NextWatch**.
-
-## Dataset
-
-Le projet utilise le dataset [MovieLens 100k](https://grouplens.org/datasets/movielens/100k/)
-publié par [GroupLens](https://grouplens.org/), de l'Université du Minnesota.
-Les fichiers utilisés sont disponibles dans le dossier [`dataset/`](dataset/) et
-sont décrits dans [`dataset/data.md`](dataset/data.md).
-
-Le dataset contient :
-
-- les notes données par les utilisateurs aux films ;
-- les informations sur les films, notamment leur titre, leur date de sortie et
-  leurs genres ;
-- les profils utilisateurs, avec l'âge, le sexe et le métier.
-
-## Objectif du projet
-
-NextWatch recommande un **top 5** de films à partir d’âge, sexe et 1–3 films
-aimés. Le détail (question, features, baseline, Precision@5) est dans
-[`PROJECT_CHARTER.md`](PROJECT_CHARTER.md).
-
-### Notebooks
+Choisir le kernel **NextWatch**.
 
 | Fichier | Contenu |
 | --- | --- |
 | [`notbook/EDA_NextWatch.ipynb`](notbook/EDA_NextWatch.ipynb) | Exploration |
 | [`notbook/MODEL_BASELINE.ipynb`](notbook/MODEL_BASELINE.ipynb) | Dummy + baseline heuristique |
-| [`notbook/MODEL_CF.ipynb`](notbook/MODEL_CF.ipynb) | UserCF, FilmCF, hybride |
-| [`notbook/MODEL_CLUSTER.ipynb`](notbook/MODEL_CLUSTER.ipynb) | Experts sexe/âge/catégories |
-| [`notbook/CONCLUSION.ipynb`](notbook/CONCLUSION.ipynb) | Synthèse + variance P@5 + popularité (tous modèles) |
+| [`notbook/MODEL_CF.ipynb`](notbook/MODEL_CF.ipynb) | Exploration CF historique ; le pipeline canonique est dans `scripts/` |
+| [`notbook/MODEL_CLUSTER.ipynb`](notbook/MODEL_CLUSTER.ipynb) | Exploration Cluster historique ; le pipeline canonique est dans `scripts/` |
+| [`notbook/EVAL_VARIANCE_POPULARITY.ipynb`](notbook/EVAL_VARIANCE_POPULARITY.ipynb) | Diagnostic historique |
+| [`notbook/CONCLUSION.ipynb`](notbook/CONCLUSION.ipynb) | Lecture des résultats finaux communs |
 
-Le dataset documente aussi le **métier** (`occupation`) ; ce signal est **hors
-scope** du modèle (voir charter et EDA).
+Le métier (`occupation`) est documenté dans le dataset mais **hors scope** du
+modèle (voir charter et EDA).
 
-### Inférence produit (âge / sexe / films → top 5)
+## Dataset
 
-Une fois (construit `artifacts/usercf.joblib`) :
+Dataset [MovieLens 100k](https://grouplens.org/datasets/movielens/100k/)
+([GroupLens](https://grouplens.org/), Université du Minnesota). Fichiers dans
+[`dataset/`](dataset/), description dans [`dataset/data.md`](dataset/data.md) :
 
-```bash
-source .venv/bin/activate
-python scripts/export_usercf.py
-```
+- notes utilisateurs / films ;
+- infos films (titre, date, genres) + posters (`poster.csv`) ;
+- profils (âge, sexe, métier).
 
-Puis dans Python :
+## Protocole et fine-tune des hyperparamètres
 
-```python
-from nextwatch_recommend import recommend, list_movies
+Le protocole commun est défini dans `scripts/evaluation_protocol.py` :
 
-recommend(age=24, gender="M", liked_movies=[50, 174])
-# ou avec des titres :
-recommend(age=53, gender="F", liked_movies=["Star Wars (1977)"], k=5)
+- 65 % apprentissage, 15 % validation, 20 % test final ;
+- aimé = note strictement supérieure à la moyenne utilisateur de référence ;
+- 1 à 3 films tirés aléatoirement avec une seed fixe ;
+- tuning uniquement sur validation ;
+- mêmes cas de test pour la baseline, Cluster et UserCF.
 
-list_movies()              # tous les titres
-list_movies(with_ids=True) # [(id, titre), ...]
-```
-
-## Fine-tune des hyperparamètres
-
-Recherche aléatoire (ou grille) sur les hypers du notebook, métrique
-**Precision@5 en mode produit** (âge + sexe + film aimé) :
+### UserCF servi
 
 ```bash
 source .venv/bin/activate
-python scripts/tune_hyperparams.py
-python scripts/tune_hyperparams.py --n-iter 200
-python scripts/tune_hyperparams.py --n-iter 500
-python scripts/tune_hyperparams.py --max-cases 150 --n-iter 30   # smoke test
+python scripts/tuner/tune_optuna.py --n-trials 300
 ```
 
-Résultats écrits dans [`results/tune_hyperparams.csv`](results/tune_hyperparams.csv)
-et [`results/best_hyperparams.json`](results/best_hyperparams.json).
-Copier ensuite les meilleurs params dans `notbook/MODEL_BASELINE.ipynb` si besoin.
+Sortie :
+[`results/best_hyperparams_cf_optuna.json`](results/best_hyperparams_cf_optuna.json).
 
-### Tuning MODEL_CLUSTER (experts + fusion)
+### Cluster utilisateurs servi
 
 ```bash
 source .venv/bin/activate
-python scripts/tune_cluster_optuna.py
+python scripts/tuner/tune_cluster_optuna.py --n-trials 300
+python scripts/tuner/tune_cluster_optuna.py --n-trials 30   # essai court
 ```
 
-`TRAIN_FRAC` est **fixé à 0.7** (comme `tune_optuna.py`). Sortie :
+Le tuner optimise le Cluster pur, sans fusion UserCF ni mélange de popularité.
+Sortie :
 [`results/best_hyperparams_cluster_optuna.json`](results/best_hyperparams_cluster_optuna.json).
+
+## Clés d’enrichissement facultatives
+
+L’application n’a besoin d’aucune clé. Seuls les scripts de régénération des
+posters et liens IMDb utilisent `TMDB_API_KEY` et `OMDB_API_KEY`.
+
+```bash
+cp .env.example .env
+set -a; source .env; set +a
+python dataset/convert_film_url.py
+python dataset/image.py
+```
+
+Ne commitez jamais `.env`. Les anciennes clés présentes dans l’historique
+doivent être révoquées auprès de TMDB et OMDb.
+
+## Structure utile
+
+```
+NextWatch/
+├── app.py                      # UI Streamlit
+├── nextwatch_recommend.py      # Inférence produit
+├── artifacts/                  # cluster.joblib, usercf.joblib
+├── dataset/                    # MovieLens + poster.csv
+├── notbook/                    # EDA, modèles, conclusion
+├── results/                    # eval_*.json, best_hyperparams_*.json
+└── scripts/
+    ├── setup.sh / setup.ps1
+    ├── Models/
+    │   ├── export_cluster.py
+    │   ├── export_usercf.py
+    │   ├── evaluate_final.py
+    │   └── eval_diagnostics.py
+    ├── evaluation_protocol.py
+    └── tuner/
+        ├── tune_optuna.py              # CF
+        └── tune_cluster_optuna.py      # Cluster
+```
 
 ## Personnes ayant accès au dépôt
 
-| Identité | Nom | Prénom
-| --- | --- | --- 
-| [toto49](https://github.com/toto49) | Boudaud | Tom 
-| [GRem0](https://github.com/GRem0) | Goubin | Rémi
-| [Oxilian37](https://github.com/Oxilian37) |Jautrou | Lilian
-| [quervainmissamou](https://github.com/quervainmissamou) | MISSAMOU BANSIMBA | Quervain
-
-> Cette liste regroupe les collaborateurs actifs et les invitations en attente
-> retournés par GitHub au moment de la vérification. Les auteurs de commits ne
-> sont pas nécessairement des personnes ayant actuellement accès au dépôt.
+| Identité                                  | Nom               | Prénom   |
+| ----------------------------------------- | ----------------- | -------- |
+| [toto49](https://github.com/toto49)       | Boudaud           | Tom      |
+| [GRem0](https://github.com/GRem0)         | Goubin            | Rémi     |
+| [Oxilian37](https://github.com/Oxilian37) | Jautrou           | Lilian   |
+| [Myriamirl](https://github.com/Myriamirl)   | Taleb             | Morgiane |

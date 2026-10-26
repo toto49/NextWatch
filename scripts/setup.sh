@@ -5,15 +5,15 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-MIN_MAJOR=3
-MIN_MINOR=10
+REQUIRED_MAJOR=3
+REQUIRED_MINOR=14
 
 if command -v python3 >/dev/null 2>&1; then
   PYTHON=python3
 elif command -v python >/dev/null 2>&1; then
   PYTHON=python
 else
-  echo "Erreur: Python n'est pas installé. Installez Python ${MIN_MAJOR}.${MIN_MINOR}+ puis relancez ce script." >&2
+  echo "Erreur: Python n'est pas installé. Installez Python ${REQUIRED_MAJOR}.${REQUIRED_MINOR} puis relancez ce script." >&2
   exit 1
 fi
 
@@ -21,8 +21,8 @@ VERSION="$("$PYTHON" -c 'import sys; print(f"{sys.version_info.major}.{sys.versi
 MAJOR="$("$PYTHON" -c 'import sys; print(sys.version_info.major)')"
 MINOR="$("$PYTHON" -c 'import sys; print(sys.version_info.minor)')"
 
-if [[ "$MAJOR" -lt "$MIN_MAJOR" ]] || { [[ "$MAJOR" -eq "$MIN_MAJOR" ]] && [[ "$MINOR" -lt "$MIN_MINOR" ]]; }; then
-  echo "Erreur: Python ${MIN_MAJOR}.${MIN_MINOR}+ requis (trouvé: ${VERSION})." >&2
+if [[ "$MAJOR" -ne "$REQUIRED_MAJOR" ]] || [[ "$MINOR" -ne "$REQUIRED_MINOR" ]]; then
+  echo "Erreur: Python ${REQUIRED_MAJOR}.${REQUIRED_MINOR} requis (trouvé: ${VERSION})." >&2
   exit 1
 fi
 

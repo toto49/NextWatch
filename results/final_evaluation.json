@@ -1,0 +1,47 @@
+{
+  "n_cases": 921,
+  "protocol": {
+    "random_state": 42,
+    "train_frac": 0.65,
+    "validation_frac": 0.15,
+    "test_frac": 0.2,
+    "max_seeds": 3,
+    "liked_definition": "rating > user_mean(reference)",
+    "seed_selection": "deterministic_random_1_to_3",
+    "reference_split": "train+validation",
+    "heldout_split": "test",
+    "case_builder": "scripts.evaluation_protocol.build_eval_cases",
+    "same_cases_for_all_methods": true,
+    "model_inference": "nextwatch_recommend.recommend",
+    "metrics": {
+      "P@5": "hits_in_top_5 / 5",
+      "P@10": "hits_in_top_10 / 10",
+      "recs_top5": "first_5_recommendation_ids"
+    },
+    "baseline": {
+      "candidate_genres": "at_least_one_genre_shared_with_seeds",
+      "minimum_reference_ratings": 5,
+      "ranking": "mean_rating_desc_then_item_id_asc",
+      "excluded_items": "seeds_only"
+    },
+    "artifact_requirements": {
+      "training_split": "train+validation",
+      "test_used": false,
+      "protocol": "common_protocol_metadata"
+    }
+  },
+  "scores": {
+    "baseline_overlap_mean": {
+      "P@5": 0.034310532030401734,
+      "P@10": 0.037242128121606946
+    },
+    "user_cluster_groups": {
+      "P@5": 0.05038002171552661,
+      "P@10": 0.04581976112920739
+    },
+    "user_user_cf": {
+      "P@5": 0.09315960912052117,
+      "P@10": 0.08534201954397394
+    }
+  }
+}
