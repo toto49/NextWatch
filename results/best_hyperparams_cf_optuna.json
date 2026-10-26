@@ -1,19 +1,20 @@
 {
-  "MIN_SUPPORT": 34,
-  "CF_N_USER": 180,
-  "CF_N_FILM": 50,
-  "HYBRID_ALPHA": 0.75,
-  "HYBRID_POOL": 270,
+  "MIN_SUPPORT": 24,
+  "CF_N_USER": 300,
   "DEMO_SEX_WEIGHT": 0.05,
-  "AGE_SCALE": 30,
-  "GENRE_BOOST": 1.05,
-  "MAX_SEEDS": 7,
-  "RRF_K": 24,
-  "SUBLINEAR_TF": false,
-  "RATING_POWER": 0.75,
-  "MIN_GENRE_MATCH": 3,
-  "TRAIN_FRAC": 0.65,
-  "best_hybrid_P@5": 0.3054662379421222,
-  "associated_user_P@5": 0.26087888531618436,
-  "associated_film_P@5": 0.29817792068595933
+  "AGE_SCALE": 60,
+  "RATING_POWER": 2.0,
+  "validation_score": 0.06988764044943821,
+  "metric": "precision_at_5",
+  "model": "usercf",
+  "n_trials": 300,
+  "protocol": {
+    "random_state": 42,
+    "train_frac": 0.65,
+    "validation_frac": 0.15,
+    "test_frac": 0.2,
+    "max_seeds": 3,
+    "liked_definition": "rating > user_mean(reference)",
+    "seed_selection": "deterministic_random_1_to_3"
+  }
 }

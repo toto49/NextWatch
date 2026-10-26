@@ -1,12 +1,18 @@
+import os
 from pathlib import Path
 import re
 import time
 import pandas as pd
 import requests
 
-API_KEY = "1d1148c7"
+API_KEY = os.getenv("OMDB_API_KEY")
 BASE_DIR = Path(__file__).resolve().parent
 
+if not API_KEY:
+  raise RuntimeError(
+      "OMDB_API_KEY est absente. Copiez .env.example vers .env puis exportez "
+      "la variable avant de lancer ce script."
+  )
 input_file = BASE_DIR / "u.item_updated.csv"
 if not input_file.exists():
   input_file = BASE_DIR / "u.item.csv"

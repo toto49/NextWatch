@@ -1,77 +1,87 @@
 # Project Charter — NextWatch
 
-## Question et décision
+## Question et décision produit
 
-**Question :** Si une personne a aimé un film en 1997, quels autres films aurait-elle pu aimer ?
+**Question :** à partir de l’âge, du sexe et de **1 à 3 films aimés**, quels
+autres films du catalogue MovieLens 100k recommander ?
 
-**Décision :** proposer un **top 5** de films à partir d’un **film aimé** (ses genres) et du profil (**âge**, **sexe**). On compare une **baseline heuristique** à **trois modèles sklearn** (clustering enrichi de films, filtrage collaboratif item–item, régression logistique).
+**Décision :** proposer un top 5 avec deux modèles sélectionnables :
 
-À l’usage : l’utilisateur saisit **âge**, **sexe** et un **film aimé**. Ce n’est pas un utilisateur du dataset en entrée.
+1. **Cluster utilisateurs** : KMeans sur les profils de goûts par genre et les
+   variables démographiques, puis classement des films appréciés dans le groupe.
+2. **User–User CF** : recherche de profils ayant aimé les mêmes films, pondérée
+   par la proximité d’âge et de sexe.
 
-## Unité, population, horizon
+La baseline n’est pas servie dans l’application ; elle sert uniquement de
+référence d’évaluation.
+
+## Population, cible et exclusions
 
 | Élément | Définition |
 | --- | --- |
-| **Unité** | Triplet `(âge, sexe, film_aimé) → classement de films candidats` ; en apprentissage : couples dérivés des notes MovieLens |
-| **Population** | MovieLens 100k (19 sept. 1997 – 22 avr. 1998) : ~943 users, ~1 682 films, ~100k notes brutes ; **périmètre** ≈ **99 990** notes après exclusion du genre `unknown` |
-| **Horizon** | Recommander d’autres films *a posteriori* sur ce catalogue historique (pas de temps réel) |
+| Population | MovieLens 100k, limité à 99 990 interactions après retrait des deux films de genre `unknown` |
+| Entrée produit | Âge, sexe et 1 à 3 films aimés |
+| Cible « aimé » | Note strictement supérieure à la moyenne de l’utilisateur calculée sur les données de référence |
+| Sortie | Classement de films ; top 5 dans l’application |
+| Hors scope | Métier, code postal, temps réel, catalogue extérieur à MovieLens 1997–1998 |
 
-## Cible \(y\) et variables \(X\)
+Seuls les films fournis en entrée sont exclus du classement. Le volume de notes
+n’est pas un facteur de score ; il sert au filtrage de support et, pour Cluster,
+uniquement de repli lorsque le groupe ne fournit pas assez de candidats.
 
-Chaque exemple est un couple *(profil + film aimé A, film candidat B)*.
+## Méthodes comparées
 
-| | Définition |
+| Méthode | Principe |
 | --- | --- |
-| **\(y\)** (cible) | \(y = 1\) si la note user→B est **strictement au-dessus de la moyenne des notes de cet utilisateur** (moyenne calculée sur le train), sinon \(y = 0\). Ranking : maximiser les \(y=1\) dans le top-k (Precision@5 / @10). Poids plus fort si note élevée. |
-| **\(X\)** | **Profil :** `age`, `gender`. **A / B :** vecteurs de `genres` (0/1). **Dérivés selon le modèle :** même cluster KMeans ; similarité cosine genres ; overlap de genres ; note moyenne train de B (sans fuite). |
-| **Sortie** | Score \(\hat{s}(X)\) par candidat B → top 5 (produit) / top 10 (eval). Pas de prédiction de la note 1–5 brute. |
+| Baseline overlap+moyenne | Films partageant au moins un genre avec les seeds, ayant au moins 5 notes de référence, triés par note moyenne |
+| Cluster utilisateurs | Profil moyen de notes par genre + âge + sexe, KMeans, puis score des films aimés dans le cluster et overlap de genres |
+| User–User CF | Fans des seeds classés par proximité démographique, puis agrégation pondérée de leurs autres films aimés |
 
-### Features et colonnes interdites
+Les anciens prototypes FilmCF, hybride FilmCF/UserCF, fusion Cluster/UserCF et
+régression logistique ne font pas partie du produit ni de la comparaison finale.
+Ils peuvent rester visibles dans l’historique exploratoire des notebooks, mais
+leurs anciens scores ne doivent pas être utilisés comme résultats actuels.
 
-| | Choix |
-| --- | --- |
-| **Dans \(X\)** | `age` ; `gender` ; genres de A et de B ; dérivés cluster / similarité / overlap / mean_rating train de B |
-| **Hors \(X\) / interdits** | `occupation` ; note de B à prédire ; agrégats calculés avec cette note ; genre `unknown` ; popularité (volume de notes) comme facteur modèle |
+## Protocole d’évaluation
 
-## Type de problème, baseline, modèles, métrique
+Le protocole canonique est implémenté dans
+`scripts/evaluation_protocol.py`.
 
-| | Choix |
-| --- | --- |
-| **Type** | Ranking / recommandation basée contenu (genres) + profil (âge, sexe) |
-| **Dummy** | Top-k films aléatoires (seed fixe) |
-| **Baseline** | Heuristique **sans ML** : overlap ≥ 1 genre avec A + **note moyenne train** (min. de notes). **Ce n’est pas le clustering.** |
-| **Modèles** | (1) **KMeans** films × genres ; (2) **Item–item CF** (`NearestNeighbors` cosine sur notes train) ; (3) **LogisticRegression** \(P(y=1 \mid X)\) — détail ci-dessous |
-| **Métrique** | **Precision@5** (principale) et **Precision@10** : part des films du top-k réellement aimés (note > moyenne user train) sur le hold-out |
+- split déterministe par interaction : **65 % apprentissage, 15 % validation,
+  20 % test final** ;
+- seed aléatoire fixée à 42 ;
+- 1 à 3 films tirés aléatoirement et de façon reproductible parmi les films
+  aimés de référence ;
+- même définition de la cible et mêmes cas pour tous les modèles ;
+- tuning Optuna uniquement sur la validation ;
+- sélection des hyperparamètres sans lecture du test ;
+- reconstruction des artefacts sur apprentissage + validation ;
+- consommation du test uniquement par `scripts/Models/evaluate_final.py` ;
+- métrique principale : Precision@5 ; Precision@10 est secondaire.
 
-**Protocole d’évaluation :** film aimé A + profil → top-k ; on vérifie la présence de films B aimés cachés. On reporte P@5 / P@10 pour dummy, baseline et chaque modèle. En inférence produit : seul le film saisi est exclu.
+Ce protocole simule l’usage produit pour des utilisateurs présents dans
+MovieLens. Il ne constitue pas un test de véritable nouvel utilisateur absent
+des données.
 
-## Construction de la baseline (heuristique)
+## Traçabilité et reproductibilité
 
-| | Rôle |
-| --- | --- |
-| **1. Overlap de genres** | Candidats = films partageant **≥ 1 genre** avec A |
-| **2. Note moyenne** | Score = moyenne des notes **train** (seuil min. de notes) |
-| **3. Exclusion** | Retirer le film A |
+Chaque artefact enregistre :
 
-La baseline doit être battue (ou au moins égalée de façon utile) par les modèles ML.
+- le protocole et le split d’entraînement ;
+- les hyperparamètres sélectionnés ;
+- les versions Python, NumPy, pandas, scikit-learn et joblib ;
+- le SHA-256 des trois fichiers MovieLens utilisés ;
+- la confirmation que le test final n’a pas servi à l’apprentissage.
 
-## Les méthodes (baseline + modèles)
+Les scores officiels sont ceux de `results/final_evaluation.json`. Les bundles
+`eval_baseline.json`, `eval_cluster.json` et `eval_cf.json` doivent provenir de
+la même exécution finale.
 
-| Nom | En une phrase | Comment ça choisit les films |
-| --- | --- | --- |
-| **Baseline** | Règle simple sans ML | Même genre(s) que le film aimé, triés par note moyenne (train). |
-| **1. KMeans enrichi** | Regroupe les films qui se ressemblent | Ressemblance = **genres** + **profil du film** (note moyenne, volume de notes, public âge/sexe sur le train). On propose d'autres films du **même groupe**, un peu réordonnés selon l'âge/sexe de l'utilisateur (`α_age`, `α_sexe`). Ce n'est **pas** la baseline. |
-| **2. Item–item CF** | « Souvent aimés avec… » | Compare les films via les **notes des utilisateurs**. On agrège les voisins de tous les films déjà aimés (pondérés par la note). |
-| **3. LogisticRegression** | Estime la chance qu'un film plaise | Apprend une proba d'aimer selon âge, sexe, genres, overlap, note moyenne, même cluster ; on classe par cette proba. |
+## Limites
 
-Toutes les méthodes **excluent** le film saisi et les films déjà aimés en train.
-
-**Poids profil (KMeans) :** `α_age` et `α_sexe` règlent l'importance de l'âge et du sexe dans le re-ranking (âge un peu plus que le sexe). Trop forts → on s'éloigne du film aimé ; trop faibles → on retombe sur « meilleurs notes du cluster ».
-
-## Pourquoi ces données permettent / ne permettent pas ce test
-
-**Permettent :** apprendre des groupes de films / similarités de genres / un score supervisé profil+contenu ; comparer à une baseline overlap+moyenne ; mesurer Precision@5/@10 (aimé = note > moyenne user).
-
-**Ne permettent pas :** visionnage sans note ; généraliser hors MovieLens 1997–98 ; prouver une causalité âge/sexe → goût ; reco hors genres (synopsis, cast, etc.).
-
-**Biais à garder (EDA) :** hommes sur-représentés ; offre Drama / Comedy dominante ; « plus noté » ≠ « plus aimé » ; données historiques.
+Les données permettent une comparaison hors ligne sur un catalogue historique.
+Elles ne permettent pas d’observer les visionnages sans note, de généraliser à
+un catalogue moderne, ni de démontrer une causalité entre âge, sexe et goûts.
+Les biais relevés dans l’EDA restent applicables : hommes sur-représentés,
+catalogue dominé par Drama/Comedy et confusion possible entre popularité et
+préférence.

@@ -4,10 +4,15 @@ import time
 import pandas as pd
 import requests
 
-API_KEY = "08e715de407f0ec77072b46ee825ef48"
+API_KEY = os.getenv("TMDB_API_KEY")
 INPUT_CSV = "dataset/u.item_updated.csv"
 OUTPUT_CSV = "dataset/u.item_with_posters.csv"
 
+if not API_KEY:
+  raise RuntimeError(
+      "TMDB_API_KEY est absente. Copiez .env.example vers .env puis exportez "
+      "la variable avant de lancer ce script."
+  )
 
 def clean_title_and_year(raw_title):
   year_match = re.search(r'\((\d{4})\)', str(raw_title))
@@ -43,13 +48,17 @@ for index, row in df.iterrows():
 
   title, year = clean_title_and_year(row['title'])
 
-  url = f'https://api.themoviedb.org/3/search/movie?api_key={API_KEY}&query={requests.utils.quote(title)}&language=fr-FR'
+  params = {"api_key": API_KEY, "query": title, "language": "fr-FR"}
   if year:
-    url += f'&year={year}'
+    params["year"] = year
 
   poster_url = None
   try:
-    res = requests.get(url, timeout=5).json()
+    res = requests.get(
+        "https://api.themoviedb.org/3/search/movie",
+        params=params,
+        timeout=5,
+    ).json()
     results = res.get('results', [])
 
     if results and results[0].get('poster_path'):

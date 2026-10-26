@@ -1,8 +1,8 @@
 """Inférence produit NextWatch — Cluster (MODEL_CLUSTER) ou User–CF (MODEL_CF).
 
 Prérequis :
-  python scripts/export_cluster.py
-  python scripts/export_usercf.py
+  python scripts/Models/export_cluster.py
+  python scripts/Models/export_usercf.py
 
 Exemple :
   from nextwatch_recommend import recommend, list_movies
@@ -18,6 +18,8 @@ from typing import Iterable, Literal
 import joblib
 import numpy as np
 
+from scripts.evaluation_protocol import dataset_fingerprint, runtime_versions
+
 ROOT = Path(__file__).resolve().parent
 CLUSTER_ARTIFACT = ROOT / "artifacts" / "cluster.joblib"
 CF_ARTIFACT = ROOT / "artifacts" / "usercf.joblib"
@@ -30,10 +32,10 @@ _CACHE: dict[str, tuple[Path, float, dict]] = {}
 def _artifact_path_for(model: ModelName) -> Path:
     if model == "cluster":
         p = CLUSTER_ARTIFACT
-        hint = "python scripts/export_cluster.py"
+        hint = "python scripts/Models/export_cluster.py"
     else:
         p = CF_ARTIFACT
-        hint = "python scripts/export_usercf.py"
+        hint = "python scripts/Models/export_usercf.py"
     if not p.exists():
         raise FileNotFoundError(f"Artefact introuvable : {p}\nLance d'abord : {hint}")
     return p
@@ -50,6 +52,17 @@ def load(model: ModelName = "cluster", path: Path | str | None = None) -> dict:
     if cached is not None and cached[0] == p and cached[1] == mtime:
         return cached[2]
     artifact = joblib.load(p)
+    meta = artifact.get("meta", {})
+    if meta.get("dataset_sha256") != dataset_fingerprint():
+        raise RuntimeError(
+            f"Artefact incompatible avec les données courantes : {p}. "
+            "Régénérez les artefacts."
+        )
+    if meta.get("runtime_versions") != runtime_versions():
+        raise RuntimeError(
+            f"Artefact incompatible avec l'environnement Python courant : {p}. "
+            "Réinstallez requirements.txt puis régénérez les artefacts."
+        )
     _CACHE[key] = (p, mtime, artifact)
     return artifact
 
@@ -126,6 +139,7 @@ def _recommend_user_cluster(
     n_g = len(genres)
     seed_proxy = float(params.get("SEED_PROXY", params.get("LIKED_THRESHOLD", 4)))
     min_group = int(params["MIN_GROUP_CANDIDATES"])
+    genre_boost = float(params.get("GENRE_BOOST", 1.0))
 
     film_genre_matrix: dict[int, list[float]] = artifact["film_genre_matrix"]
     pop_count: dict[int, int] = artifact["pop_count"]
@@ -159,7 +173,7 @@ def _recommend_user_cluster(
         overlap = 0
         if vec is not None and seed_mask.any():
             overlap = int(np.sum((np.asarray(vec, dtype=float) > 0) & seed_mask))
-        ranked.append((mid, overlap, float(sc)))
+        ranked.append((mid, overlap, float(sc) * (genre_boost**overlap)))
     ranked.sort(key=lambda x: (-x[1], -x[2], x[0]))
     out = [m for m, _, _ in ranked[:k]]
 
@@ -189,6 +203,7 @@ def _recommend_usercf(
     demo_sex_weight = float(params["DEMO_SEX_WEIGHT"])
     age_scale = float(params["AGE_SCALE"])
     rating_power = float(params["RATING_POWER"])
+    eligible_ids = set(artifact["eligible_ids"])
 
     seen = set(seeds)
     neighbors: list[tuple[int, float]] = []
@@ -206,7 +221,7 @@ def _recommend_usercf(
     for vid, sim in neighbors:
         for mid, rat in artifact["liked_by_user"].get(vid, []):
             mid = int(mid)
-            if mid in seen:
+            if mid in seen or mid not in eligible_ids:
                 continue
             scores[mid] = scores.get(mid, 0.0) + float(sim) * (
                 float(rat) ** rating_power

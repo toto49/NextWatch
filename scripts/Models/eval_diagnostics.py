@@ -25,7 +25,7 @@ BUCKET_COLORS = {
 
 def find_results_dir() -> Path:
     """Toujours `NextWatch/results/` (pas le cwd du notebook)."""
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     out = root / "results"
     out.mkdir(parents=True, exist_ok=True)
     return out
