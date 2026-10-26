@@ -193,3 +193,19 @@ def runtime_versions() -> dict[str, str]:
         "scikit-learn": version("scikit-learn"),
         "joblib": version("joblib"),
     }
+
+
+def runtime_is_compatible(
+    artifact_versions: dict[str, str],
+    current_versions: dict[str, str] | None = None,
+) -> bool:
+    """Vérifie la compatibilité joblib sans imposer le patch Python exact."""
+    current = current_versions or runtime_versions()
+    artifact_python = artifact_versions.get("python", "").split(".")[:2]
+    current_python = current.get("python", "").split(".")[:2]
+    if artifact_python != current_python:
+        return False
+    return all(
+        artifact_versions.get(package) == current.get(package)
+        for package in ("numpy", "pandas", "scikit-learn", "joblib")
+    )

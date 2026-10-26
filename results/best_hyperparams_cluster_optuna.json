@@ -1,16 +1,16 @@
 {
-  "MIN_SUPPORT": 9,
-  "N_CLUSTERS": 4,
-  "MIN_GROUP_CANDIDATES": 1,
-  "SEED_PROXY": 3.25,
-  "RATING_POWER": 2.0,
-  "GENRE_BOOST": 1.0,
+  "MIN_SUPPORT": 45,
+  "N_CLUSTERS": 17,
+  "MIN_GROUP_CANDIDATES": 5,
+  "SEED_PROXY": 5.0,
+  "RATING_POWER": 0.5,
   "SCORE_MODE": "sum",
+  "GENRE_BOOST": 1.55,
   "metric": "precision@5",
-  "validation_score": null,
-  "n_trials": 0,
+  "validation_score": 0.04674157303370787,
+  "n_trials": 300,
+  "best_trial_number": 240,
   "model": "cluster_pure",
-  "status": "fallback_from_previous_search_after_full_retuning_timeout",
   "protocol": {
     "random_state": 42,
     "train_frac": 0.65,
@@ -19,5 +19,7 @@
     "max_seeds": 3,
     "liked_definition": "rating > user_mean(reference)",
     "seed_selection": "deterministic_random_1_to_3"
-  }
+  },
+  "training_split": "train",
+  "optimization_split": "validation"
 }

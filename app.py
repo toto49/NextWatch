@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import json
 from pathlib import Path
 from nextwatch_recommend import list_movies, recommend
 
@@ -132,6 +133,16 @@ def load_poster_data():
 
 df_posters = load_poster_data()
 
+@st.cache_data
+def load_evaluation_summary():
+    results_file = Path(__file__).resolve().parent / "results" / "final_evaluation.json"
+    try:
+        return json.loads(results_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+evaluation_summary = load_evaluation_summary()
+
 # --- EN-TÊTE HERO ---
 st.markdown("""
     <div style="background: linear-gradient(90deg, #1e1b4b 0%, #0f172a 100%); border-radius: 16px; padding: 24px; margin-bottom: 20px; border: 1px solid #312e81;">
@@ -205,7 +216,11 @@ with col_form:
         # Catalogue selon le modèle choisi
         try:
             movies_list = list_movies(model=model)
-        except Exception:
+        except Exception as exc:
+            st.error(
+                "Le catalogue ne peut pas être chargé. "
+                f"Détail technique : {exc}"
+            )
             movies_list = []
 
         # Sélection des films
@@ -219,12 +234,32 @@ with col_form:
         st.write("")
 
         # Bouton de génération
-        submit_btn = st.button("Obtenir mes recommandations 🍿", type="primary", use_container_width=True)
+        submit_btn = st.button(
+            "Obtenir mes recommandations 🍿",
+            type="primary",
+            width="stretch",
+        )
 
 st.divider()
 
 # --- FONCTION UTILITAIRE D'AFFICHAGE DES CARTES ---
 def render_recommendations(selected_model):
+    method_name = {
+        "cluster": "user_cluster_groups",
+        "cf": "user_user_cf",
+    }[selected_model]
+    model_scores = evaluation_summary.get("scores", {}).get(method_name, {})
+    hit_rate_5 = model_scores.get("HitRate@5")
+    if hit_rate_5 is not None:
+        st.metric(
+            "Hit Rate@5 — au moins 1 film aimé",
+            f"{float(hit_rate_5):.1%}",
+            border=True,
+        )
+        st.caption(
+            f"Mesuré sur {evaluation_summary.get('n_cases', 0)} cas du test final commun."
+        )
+
     recs_ids = recommend(
         age=age,
         gender=gender,

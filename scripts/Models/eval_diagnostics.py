@@ -129,11 +129,15 @@ def variance_table(methods: dict[str, dict]) -> pd.DataFrame:
     for name, data in methods.items():
         p5 = np.asarray(data["P@5"], dtype=float)
         p10 = np.asarray(data.get("P@10", []), dtype=float)
+        hit_rate_5 = np.asarray(data.get("HitRate@5", p5 > 0), dtype=float)
         row = {
             "method": name,
             "source": data.get("_source", ""),
             "P@5": float(p5.mean()) if len(p5) else np.nan,
             "P@10": float(p10.mean()) if len(p10) else np.nan,
+            "HitRate@5": (
+                float(hit_rate_5.mean()) if len(hit_rate_5) else np.nan
+            ),
             "var_P@5": float(np.var(p5, ddof=1)) if len(p5) > 1 else np.nan,
             "écart-type": float(np.std(p5, ddof=1)) if len(p5) > 1 else np.nan,
             "n_cases": int(len(p5)),

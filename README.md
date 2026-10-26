@@ -85,14 +85,16 @@ officielle est écrite dans `results/final_evaluation.json`.
 
 Sur 921 cas test communs :
 
-- baseline overlap+moyenne : P@5 = **0,0343** ;
-- Cluster utilisateurs : P@5 = **0,0504** ;
-- User–User CF : P@5 = **0,0932**.
+- baseline overlap+moyenne : P@5 = **0,0343**, Hit Rate@5 = **15,5 %** ;
+- Cluster utilisateurs : P@5 = **0,0534**, Hit Rate@5 = **22,7 %** ;
+- User–User CF : P@5 = **0,0932**, Hit Rate@5 = **37,6 %**.
 
-UserCF est donc le meilleur des deux modèles servis sur ce protocole. Son tuning
-a été recalculé sur 300 essais. Le tuning Cluster complet a été interrompu après
-environ 16 minutes ; son artefact utilise un fallback compatible provenant de
-la recherche précédente et ne doit pas être présenté comme optimal.
+UserCF reste le meilleur des deux modèles servis sur ce protocole. Les deux
+modèles ont désormais été réglés sur **300 essais Optuna** ; le meilleur essai
+Cluster est le numéro 240, avec P@5 validation = **0,0467**.
+
+Le **Hit Rate@5** est le pourcentage de cas ayant au moins un film réellement
+aimé parmi les cinq recommandations.
 
 ### Test rapide sans UI
 
@@ -123,11 +125,11 @@ Choisir le kernel **NextWatch**.
 | Fichier | Contenu |
 | --- | --- |
 | [`notbook/EDA_NextWatch.ipynb`](notbook/EDA_NextWatch.ipynb) | Exploration |
-| [`notbook/MODEL_BASELINE.ipynb`](notbook/MODEL_BASELINE.ipynb) | Dummy + baseline heuristique |
-| [`notbook/MODEL_CF.ipynb`](notbook/MODEL_CF.ipynb) | Exploration CF historique ; le pipeline canonique est dans `scripts/` |
-| [`notbook/MODEL_CLUSTER.ipynb`](notbook/MODEL_CLUSTER.ipynb) | Exploration Cluster historique ; le pipeline canonique est dans `scripts/` |
-| [`notbook/EVAL_VARIANCE_POPULARITY.ipynb`](notbook/EVAL_VARIANCE_POPULARITY.ipynb) | Diagnostic historique |
-| [`notbook/CONCLUSION.ipynb`](notbook/CONCLUSION.ipynb) | Lecture des résultats finaux communs |
+| [`notbook/MODEL_BASELINE.ipynb`](notbook/MODEL_BASELINE.ipynb) | Définition et résultats officiels de la baseline |
+| [`notbook/MODEL_CF.ipynb`](notbook/MODEL_CF.ipynb) | Paramètres, artefact, inférence et score UserCF |
+| [`notbook/MODEL_CLUSTER.ipynb`](notbook/MODEL_CLUSTER.ipynb) | Paramètres, artefact, inférence et score Cluster |
+| [`notbook/EVAL_VARIANCE_POPULARITY.ipynb`](notbook/EVAL_VARIANCE_POPULARITY.ipynb) | Dispersion P@5 et diagnostic de popularité communs |
+| [`notbook/CONCLUSION.ipynb`](notbook/CONCLUSION.ipynb) | Synthèse des trois méthodes sur le test final |
 
 Le métier (`occupation`) est documenté dans le dataset mais **hors scope** du
 modèle (voir charter et EDA).
