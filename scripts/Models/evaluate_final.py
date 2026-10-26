@@ -93,6 +93,7 @@ def _full_protocol() -> dict:
         "metrics": {
             "P@5": "hits_in_top_5 / 5",
             "P@10": "hits_in_top_10 / 10",
+            "HitRate@5": "1 if at_least_one_relevant_item_in_top_5 else 0",
             "recs_top5": "first_5_recommendation_ids",
         },
         "baseline": {
@@ -146,14 +147,21 @@ def _evaluate(
 ) -> dict[str, list]:
     p5: list[float] = []
     p10: list[float] = []
+    hit_rate_5: list[float] = []
     recs_top5: list[list[int]] = []
     for _, case in cases.iterrows():
         recommendations = [int(x) for x in recommend_fn(case)[:MAX_K]]
         relevant = {int(x) for x in case["relevant_ids"]}
         p5.append(float(precision_at_k(recommendations, relevant, 5)))
         p10.append(float(precision_at_k(recommendations, relevant, 10)))
+        hit_rate_5.append(float(any(movie_id in relevant for movie_id in recommendations[:5])))
         recs_top5.append(recommendations[:5])
-    return {"P@5": p5, "P@10": p10, "recs_top5": recs_top5}
+    return {
+        "P@5": p5,
+        "P@10": p10,
+        "HitRate@5": hit_rate_5,
+        "recs_top5": recs_top5,
+    }
 
 
 def _bundle(
@@ -264,6 +272,7 @@ def main() -> None:
             method: {
                 "P@5": float(np.mean(values["P@5"])),
                 "P@10": float(np.mean(values["P@10"])),
+                "HitRate@5": float(np.mean(values["HitRate@5"])),
             }
             for method, values in evaluations.items()
         },
@@ -276,7 +285,11 @@ def main() -> None:
 
     print(f"Évaluation finale écrite dans {RESULTS_DIR} ({n_cases} cas).")
     for method, scores in summary["scores"].items():
-        print(f"  {method}: P@5={scores['P@5']:.4f} | P@10={scores['P@10']:.4f}")
+        print(
+            f"  {method}: P@5={scores['P@5']:.4f} | "
+            f"P@10={scores['P@10']:.4f} | "
+            f"HitRate@5={scores['HitRate@5']:.2%}"
+        )
 
 
 if __name__ == "__main__":

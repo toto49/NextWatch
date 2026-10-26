@@ -39,8 +39,7 @@ uniquement de repli lorsque le groupe ne fournit pas assez de candidats.
 
 Les anciens prototypes FilmCF, hybride FilmCF/UserCF, fusion Cluster/UserCF et
 régression logistique ne font pas partie du produit ni de la comparaison finale.
-Ils peuvent rester visibles dans l’historique exploratoire des notebooks, mais
-leurs anciens scores ne doivent pas être utilisés comme résultats actuels.
+Les notebooks canoniques ne présentent plus leurs anciens scores.
 
 ## Protocole d’évaluation
 
@@ -57,7 +56,9 @@ Le protocole canonique est implémenté dans
 - sélection des hyperparamètres sans lecture du test ;
 - reconstruction des artefacts sur apprentissage + validation ;
 - consommation du test uniquement par `scripts/Models/evaluate_final.py` ;
-- métrique principale : Precision@5 ; Precision@10 est secondaire.
+- métrique principale : Precision@5 ;
+- métriques complémentaires : Precision@10 et Hit Rate@5, soit la part des cas
+  ayant au moins un film aimé dans le top 5.
 
 Ce protocole simule l’usage produit pour des utilisateurs présents dans
 MovieLens. Il ne constitue pas un test de véritable nouvel utilisateur absent
