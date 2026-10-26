@@ -27,7 +27,7 @@ from scripts.evaluation_protocol import (  # noqa: E402
     load_dataframe,
     precision_at_k,
     protocol_metadata,
-    runtime_versions,
+    runtime_is_compatible,
     split_dataframe,
 )
 
@@ -57,7 +57,7 @@ def _validate_artifact(model: nextwatch_recommend.ModelName) -> None:
     expected_dataset = dataset_fingerprint()
     if meta.get("dataset_sha256") != expected_dataset:
         errors.append("dataset_sha256 ne correspond pas aux données courantes")
-    if meta.get("runtime_versions") != runtime_versions():
+    if not runtime_is_compatible(meta.get("runtime_versions", {})):
         errors.append("runtime_versions ne correspond pas à l'environnement courant")
 
     expected = protocol_metadata()

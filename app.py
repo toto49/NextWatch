@@ -216,7 +216,11 @@ with col_form:
         # Catalogue selon le modèle choisi
         try:
             movies_list = list_movies(model=model)
-        except Exception:
+        except Exception as exc:
+            st.error(
+                "Le catalogue ne peut pas être chargé. "
+                f"Détail technique : {exc}"
+            )
             movies_list = []
 
         # Sélection des films

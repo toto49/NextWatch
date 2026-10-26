@@ -18,7 +18,11 @@ from typing import Iterable, Literal
 import joblib
 import numpy as np
 
-from scripts.evaluation_protocol import dataset_fingerprint, runtime_versions
+from scripts.evaluation_protocol import (
+    dataset_fingerprint,
+    runtime_is_compatible,
+    runtime_versions,
+)
 
 ROOT = Path(__file__).resolve().parent
 CLUSTER_ARTIFACT = ROOT / "artifacts" / "cluster.joblib"
@@ -58,7 +62,7 @@ def load(model: ModelName = "cluster", path: Path | str | None = None) -> dict:
             f"Artefact incompatible avec les données courantes : {p}. "
             "Régénérez les artefacts."
         )
-    if meta.get("runtime_versions") != runtime_versions():
+    if not runtime_is_compatible(meta.get("runtime_versions", {})):
         raise RuntimeError(
             f"Artefact incompatible avec l'environnement Python courant : {p}. "
             "Réinstallez requirements.txt puis régénérez les artefacts."
