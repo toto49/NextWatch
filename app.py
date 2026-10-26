@@ -12,7 +12,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- STYLE CSS (a voir pour fichier separer) ---
+# --- STYLE CSS GLASSMORPHISM & NEON ---
 st.markdown(
     """
     <style>
@@ -23,24 +23,26 @@ st.markdown(
     }
 
     /* Grille pour les cartes TCG */
-    .tcg-container {
+    .stApp .tcg-container {
         display: flex;
         flex-wrap: wrap;
         gap: 20px;
         justify-content: center;
         align-items: stretch;
-        margin-top: 20px;
+        margin-top: 15px;
     }
 
-    /* Style d'une carte TCG */
-    .tcg-card {
-        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-        border: 2px solid #38bdf8;
+    /* Style d'une carte Glassmorphism */
+    .stApp .tcg-card {
+        background: rgba(30, 41, 59, 0.75);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(56, 189, 248, 0.3);
         border-radius: 16px;
         width: 200px;
-        padding: 12px;
-        box-shadow: 0 10px 20px rgba(0,0,0,0.5), 0 0 15px rgba(56, 189, 248, 0.2);
-        transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+        padding: 14px;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -48,59 +50,66 @@ st.markdown(
         position: relative;
     }
 
-    .tcg-card:hover {
-        transform: translateY(-10px) scale(1.03);
-        box-shadow: 0 20px 30px rgba(0,0,0,0.7), 0 0 25px rgba(225, 29, 72, 0.6);
-        border-color: #e11d48;
+    .stApp .tcg-card:hover {
+        transform: translateY(-8px) scale(1.02);
+        border-color: #38bdf8;
+        box-shadow: 0 12px 28px rgba(56, 189, 248, 0.25), 0 0 20px rgba(225, 29, 72, 0.3);
     }
 
-    .tcg-badge {
+    .stApp .tcg-badge {
         position: absolute;
-        top: -12px;
-        right: -12px;
+        top: -10px;
+        right: -10px;
         background: linear-gradient(45deg, #e11d48, #f43f5e);
         color: white;
         font-weight: 800;
-        font-size: 0.85rem;
-        padding: 4px 10px;
+        font-size: 0.8rem;
+        padding: 3px 9px;
         border-radius: 20px;
         border: 2px solid #ffffff;
         box-shadow: 0 4px 8px rgba(0,0,0,0.4);
     }
 
-    .tcg-poster {
+    .stApp .tcg-poster {
         width: 100%;
-        height: 260px;
+        height: 250px;
         object-fit: cover;
         border-radius: 10px;
-        border: 1px solid #334155;
-        margin-bottom: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        margin-bottom: 10px;
     }
 
-    .tcg-title {
-        font-size: 0.95rem;
+    .stApp .tcg-title {
+        font-size: 0.9rem;
         font-weight: 700;
         color: #f1f5f9;
-        text-decoration: none;
         line-height: 1.3;
         display: -webkit-box;
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
         overflow: hidden;
         height: 2.6em;
+        margin-bottom: 8px;
     }
 
-    .tcg-title:hover {
-        color: #38bdf8;
-    }
-
-    .tcg-footer {
-        margin-top: 8px;
+    /* Bouton IMDb stylisé */
+    .stApp .tcg-footer-btn {
+        margin-top: auto;
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: #000000;
         font-size: 0.75rem;
-        color: #94a3b8;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
+        font-weight: 800;
+        padding: 6px 12px;
+        border-radius: 8px;
+        text-decoration: none;
+        transition: opacity 0.2s, transform 0.2s;
+        display: inline-block;
+        width: 100%;
+    }
+
+    .stApp .tcg-footer-btn:hover {
+        opacity: 0.9;
+        transform: scale(1.03);
     }
     </style>
 """,
@@ -123,25 +132,38 @@ def load_poster_data():
 
 df_posters = load_poster_data()
 
-# --- EN-TÊTE PRINCIPAL ---
-st.title('NextWatch 🎥')
-st.markdown('Si une personne a aimé un film en 1997, quels autres films aurait-elle pu aimer ?')
+# --- EN-TÊTE HERO ---
+st.markdown("""
+    <div style="background: linear-gradient(90deg, #1e1b4b 0%, #0f172a 100%); border-radius: 16px; padding: 24px; margin-bottom: 20px; border: 1px solid #312e81;">
+        <h1 style="color: #ffffff; margin:0; font-size: 2.2rem;">🎥 NextWatch AI</h1>
+        <p style="color: #94a3b8; font-size: 1rem; margin-top: 6px; margin-bottom: 0;">
+            Moteur de recommandation basé sur le jeu de données MovieLens 100k (1997-1998).
+        </p>
+    </div>
+""", unsafe_allow_html=True)
+
+# Indicateurs de données en haut de page
+m1, m2, m3 = st.columns(3)
+m1.metric(label="Films au catalogue", value="1 682")
+m2.metric(label="Utilisateurs analysés", value="943")
+m3.metric(label="Évaluations enregistrées", value="100 000")
+
 st.divider()
 
 # --- BARRE LATÉRALE ---
 st.sidebar.title('NextWatch')
-st.sidebar.info("💡 **NextWatch** est un système de recommandation basé sur le jeu de données MovieLens 100k (1997-1998).")
+st.sidebar.info("💡 **NextWatch** compare la recommandation par Clustering et la recommandation par Filtrage Collaboratif (User-CF).")
 
 # ---------------------------------------------------------
 # BLOC PROFIL ET SÉLECTION DE FILMS
 # ---------------------------------------------------------
-_, col_form, _ = st.columns([1, 5, 1])
+_, col_form, _ = st.columns([1, 6, 1])
 
 with col_form:
     with st.container(border=True):
         st.subheader("👤 Profil & Sélection de films")
 
-        col_genre, col_age, col_model = st.columns(3, gap="medium")
+        col_genre, col_age, col_compare = st.columns(3, gap="medium")
 
         with col_genre:
             genre_label = st.segmented_control(
@@ -161,15 +183,22 @@ with col_form:
                 width="stretch",
             )
 
-        with col_model:
+        with col_compare:
+            st.write("")
+            st.write("")
+            compare_mode = st.checkbox("⚡ Mode comparatif (A/B Test)", value=False, help="Affiche les résultats des 2 modèles côte à côte")
+
+        if not compare_mode:
             model_label = st.segmented_control(
-                "Modèle",
+                "Modèle à utiliser",
                 ["Cluster", "CF"],
                 default="Cluster",
                 help="Cluster = MODEL_CLUSTER · CF = User–CF",
                 width="stretch",
             )
             model = "cluster" if model_label == "Cluster" else "cf"
+        else:
+            model = "cluster"
 
         st.write("")
 
@@ -194,56 +223,75 @@ with col_form:
 
 st.divider()
 
-# ---------------------------------------------------------
-# BLOC RECOMMANDATIONS CARTES TCG 
-# ---------------------------------------------------------
-st.subheader("🎬 Tes recommandations de films")
+# --- FONCTION UTILITAIRE D'AFFICHAGE DES CARTES ---
+def render_recommendations(selected_model):
+    recs_ids = recommend(
+        age=age,
+        gender=gender,
+        liked_movies=choices,
+        model=selected_model,
+        return_ids=True,
+    )
+    recs_titles = recommend(
+        age=age,
+        gender=gender,
+        liked_movies=choices,
+        model=selected_model,
+        return_ids=False,
+    )
 
+    default_poster = "https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?w=500&auto=format&fit=crop"
+    card_items = []
+
+    for i, (mid, title) in enumerate(zip(recs_ids, recs_titles), 1):
+        row = df_posters[df_posters["movie_id"] == int(mid)]
+        
+        poster_url = default_poster
+        imdb_url = "#"
+
+        if not row.empty:
+            p_url = row.iloc[0]["poster_url"]
+            i_url = row.iloc[0]["imdb_url"]
+
+            if pd.notna(p_url) and str(p_url).startswith("http"):
+                poster_url = str(p_url)
+            if pd.notna(i_url) and str(i_url).startswith("http"):
+                imdb_url = str(i_url)
+
+        # Enchaînement compact sur une seule ligne pour éviter que Streamlit n'interprète le HTML comme du texte brut
+        card_html = (
+            f'<div class="tcg-card">'
+            f'<div class="tcg-badge">#{i}</div>'
+            f'<img src="{poster_url}" class="tcg-poster" alt="{title}">'
+            f'<div class="tcg-title">{title}</div>'
+            f'<a href="{imdb_url}" target="_blank" class="tcg-footer-btn">Fiche IMDb ↗</a>'
+            f'</div>'
+        )
+        card_items.append(card_html)
+
+    full_html = f'<div class="tcg-container">{"".join(card_items)}</div>'
+    st.markdown(full_html, unsafe_allow_html=True)
+
+# ---------------------------------------------------------
+# BLOC RECOMMANDATIONS (AFFICHAGE SIMPLE OU COMPARATIF)
+# ---------------------------------------------------------
 if submit_btn:
     if not choices:
         st.warning("⚠️ Veuillez sélectionner au moins un film dans la liste ci-dessus.")
     else:
         with st.spinner("Analyse des préférences en cours..."):
             try:
-                recs_ids = recommend(
-                    age=age,
-                    gender=gender,
-                    liked_movies=choices,
-                    model=model,
-                    return_ids=True,
-                )
-                recs_titles = recommend(
-                    age=age,
-                    gender=gender,
-                    liked_movies=choices,
-                    model=model,
-                    return_ids=False,
-                )
-
-                default_poster = "https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?w=500&auto=format&fit=crop"
-                card_items = []
-
-                for i, (mid, title) in enumerate(zip(recs_ids, recs_titles), 1):
-                    row = df_posters[df_posters["movie_id"] == int(mid)]
-                    
-                    poster_url = default_poster
-                    imdb_url = "#"
-
-                    if not row.empty:
-                        p_url = row.iloc[0]["poster_url"]
-                        i_url = row.iloc[0]["imdb_url"]
-
-                        if pd.notna(p_url) and str(p_url).startswith("http"):
-                            poster_url = str(p_url)
-                        if pd.notna(i_url) and str(i_url).startswith("http"):
-                            imdb_url = str(i_url)
-
-                    card_html = f'<div class="tcg-card"><div class="tcg-badge">#{i}</div><a href="{imdb_url}" target="_blank"><img src="{poster_url}" class="tcg-poster" alt="{title}"></a><a href="{imdb_url}" target="_blank" class="tcg-title">{title}</a><div class="tcg-footer">Fiche IMDb ↗</div></div>'
-                    card_items.append(card_html)
-
-                full_html = f'<div class="tcg-container">{"".join(card_items)}</div>'
-                st.markdown(full_html, unsafe_allow_html=True)
-
+                if compare_mode:
+                    col_left, col_right = st.columns(2)
+                    with col_left:
+                        st.subheader("🎯 Modèle Cluster")
+                        render_recommendations("cluster")
+                    with col_right:
+                        st.subheader("🤝 Modèle User-CF")
+                        render_recommendations("cf")
+                else:
+                    st.subheader("🎬 Tes recommandations de films")
+                    render_recommendations(model)
             except Exception as e:
                 st.error(f"Une erreur est survenue lors de la recommandation : {e}")
 else:
