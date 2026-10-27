@@ -5,9 +5,10 @@ Prérequis :
   python scripts/Models/export_usercf.py
 
 Exemple :
-  from nextwatch_recommend import recommend, list_movies
+  from nextwatch_recommend import recommend, list_movies, list_genres
   recommend(age=24, gender=\"M\", liked_movies=[50, 174], model=\"cluster\")
   recommend(age=24, gender=\"M\", liked_movies=[50, 174], model=\"cf\")
+  recommend(age=24, gender=\"M\", liked_genres=[\"Comedy\", \"Drama\"], model=\"cluster\")
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ import joblib
 import numpy as np
 
 from scripts.evaluation_protocol import (
+    MAX_SEEDS,
     dataset_fingerprint,
     runtime_is_compatible,
     runtime_versions,
@@ -91,6 +93,19 @@ def list_movies(
     return [title for _, title in items]
 
 
+def list_genres(*, model: ModelName = "cluster") -> list[str]:
+    """Genres MovieLens disponibles (Cluster uniquement en produit)."""
+    try:
+        artifact = load(model)
+    except FileNotFoundError:
+        other: ModelName = "cf" if model == "cluster" else "cluster"
+        artifact = load(other)
+    genres = artifact.get("genres")
+    if not genres:
+        raise ValueError("Aucun genre dans l'artefact chargé")
+    return list(genres)
+
+
 def _resolve_movie_ids(liked_movies: Iterable, artifact: dict) -> list[int]:
     title_to_id = artifact["title_to_id"]
     movie_title = artifact["movie_title"]
@@ -130,12 +145,35 @@ def _normalize_gender(gender: str) -> str:
     return gender_values[gender_input]
 
 
+def _resolve_liked_genres(liked_genres: Iterable[str], artifact: dict) -> np.ndarray:
+    genres: list[str] = artifact["genres"]
+    genre_to_idx = {name: i for i, name in enumerate(genres)}
+    mask = np.zeros(len(genres), dtype=bool)
+    resolved: list[str] = []
+    for raw in liked_genres:
+        name = str(raw).strip()
+        key = name.casefold()
+        match = next((g for g in genres if g.casefold() == key), None)
+        if match is None:
+            raise ValueError(f"Genre inconnu : {raw!r}. Choix : {genres}")
+        if match not in resolved:
+            resolved.append(match)
+            mask[genre_to_idx[match]] = True
+    if not resolved:
+        raise ValueError("liked_genres ne doit pas être vide")
+    if len(resolved) > MAX_SEEDS:
+        raise ValueError(f"liked_genres accepte au plus {MAX_SEEDS} genres")
+    return mask
+
+
 def _recommend_user_cluster(
     seeds: list[int],
     age: float,
     gender: str,
     artifact: dict,
     k: int,
+    *,
+    seed_mask: np.ndarray | None = None,
 ) -> list[int]:
     """Aligné sur ``recommend_user_cluster`` de ``MODEL_CLUSTER.ipynb``."""
     params = artifact["params"]
@@ -154,14 +192,17 @@ def _recommend_user_cluster(
 
     seen = set(seeds)
 
-    # Cold-start : genres des seeds = proxy ; reste = moyenne train (comme le notebook)
+    # Cold-start : genres des seeds (ou genres choisis) = proxy ; reste = moyenne train
     raw = np.asarray(scaler.mean_, dtype=float).copy()
-    seed_mask = np.zeros(n_g, dtype=bool)
-    for qid in seeds:
-        vec = film_genre_matrix.get(qid)
-        if vec is None:
-            continue
-        seed_mask |= np.asarray(vec, dtype=float) > 0
+    if seed_mask is None:
+        seed_mask = np.zeros(n_g, dtype=bool)
+        for qid in seeds:
+            vec = film_genre_matrix.get(qid)
+            if vec is None:
+                continue
+            seed_mask |= np.asarray(vec, dtype=float) > 0
+    elif seed_mask.shape != (n_g,):
+        raise ValueError("seed_mask invalide pour le modèle Cluster")
     raw[:n_g][seed_mask] = seed_proxy
     raw[n_g] = float(age)
     raw[n_g + 1] = 1.0 if gender == "M" else 0.0
@@ -236,28 +277,45 @@ def _recommend_usercf(
 def recommend(
     age: float | int,
     gender: str,
-    liked_movies: Iterable,
+    liked_movies: Iterable | None = None,
     *,
+    liked_genres: Iterable[str] | None = None,
     model: ModelName = "cluster",
     k: int = 5,
     return_ids: bool = False,
     artifact_path: Path | str | None = None,
 ) -> list[str] | list[int]:
-    """Top-k selon ``model`` : ``\"cluster\"`` (MODEL_CLUSTER) ou ``\"cf\"`` (User–CF)."""
+    """Top-k selon ``model`` : ``\"cluster\"`` (MODEL_CLUSTER) ou ``\"cf\"`` (User–CF).
+
+    Entrée : films aimés **ou** (Cluster seulement) jusqu'à ``MAX_SEEDS`` genres.
+    """
     if k < 1:
         raise ValueError("k doit être ≥ 1")
     if model not in ("cluster", "cf"):
         raise ValueError("model doit être 'cluster' ou 'cf'")
 
+    has_movies = liked_movies is not None
+    has_genres = liked_genres is not None
+    if has_movies == has_genres:
+        raise ValueError("Fournir exactement l'un de liked_movies ou liked_genres")
+    if has_genres and model != "cluster":
+        raise ValueError("liked_genres n'est disponible que pour model='cluster'")
+
     artifact = load(model, path=artifact_path)
     gender_val = _normalize_gender(gender)
     age_val = float(age)
-    seeds = _resolve_movie_ids(liked_movies, artifact)
 
-    if model == "cluster":
-        ranked = _recommend_user_cluster(seeds, age_val, gender_val, artifact, k)
+    if has_genres:
+        seed_mask = _resolve_liked_genres(liked_genres or (), artifact)
+        ranked = _recommend_user_cluster(
+            [], age_val, gender_val, artifact, k, seed_mask=seed_mask
+        )
     else:
-        ranked = _recommend_usercf(age_val, gender_val, seeds, artifact, k)
+        seeds = _resolve_movie_ids(liked_movies or (), artifact)
+        if model == "cluster":
+            ranked = _recommend_user_cluster(seeds, age_val, gender_val, artifact, k)
+        else:
+            ranked = _recommend_usercf(age_val, gender_val, seeds, artifact, k)
 
     movie_title = artifact["movie_title"]
     if return_ids:
