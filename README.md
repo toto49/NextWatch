@@ -3,7 +3,7 @@
 Système de recommandation de films (MovieLens 100k) : à partir de l’**âge**, du
 **sexe** et de **1–3 films aimés**, l’app propose un **top 5**.
 
-L’interface (`app.py`) permet de choisir le modèle (**Cluster** ou **CF**), le
+L’interface (`app.py`) permet de choisir le modèle (**Cluster** ou **Voisins**), le
 profil, jusqu’à 3 films, puis d’afficher les recommandations avec posters IMDb.
 
 Le détail (question, features, baseline, Precision@5) est dans
